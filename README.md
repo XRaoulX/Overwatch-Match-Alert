@@ -25,7 +25,7 @@ Because of how Windows 10/11 handles hardware-accelerated games, **you CANNOT fu
 
 ### 1. Portable Executable (Recommended)
 You do not need Python installed! 
-1. Download **`OW2_Match_Notifier.exe`** and place it anywhere on your PC (e.g., your Desktop).
+1. Download **`Overwatch_Match_Alert.exe`** and place it anywhere on your PC (e.g., your Desktop).
 2. Double-click the file to run it.
 3. It will launch directly into your Windows System Tray (bottom right corner of your taskbar).
 
@@ -51,5 +51,5 @@ If you wish to edit the source code or tweak the templates:
 1. Ensure Python 3.10+ is installed.
 2. Install dependencies: `pip install -r requirements.txt`
 3. Add or replace templates in the `masked_screenshots/` directory. They must be masked PNGs (pure black `[0,0,0]` is treated as fully transparent).
-4. Run the raw python script: `python ow_notifier.py`
+4. Run the raw python script: `python ow_match_alert.py`
 5. **To Rebuild the .exe:** Simply double-click the included `build_exe.bat` script. It will automatically package everything via PyInstaller into the `dist_builds` folder.

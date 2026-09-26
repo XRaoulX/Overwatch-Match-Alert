@@ -843,9 +843,9 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
     # Start with active or paused color based on initial state
     initial_color = ICON_COLOR_ACTIVE if state.scanning else ICON_COLOR_PAUSED
     icon = pystray.Icon(
-        "ow_notifier",
+        "ow_match_alert",
         icon=create_circle_icon(initial_color),
-        title="OW2 Match Notifier",
+        title="Overwatch Match Alert",
         menu=pystray.Menu(
             pystray.MenuItem(
                 lambda text: f"Status: {state.status_text[:50]}",
@@ -1020,7 +1020,7 @@ def main():
     file_handler.setFormatter(log_formatter)
     root_logger.addHandler(file_handler)
 
-    logging.info("Overwatch 2 Match Notifier starting...")
+    logging.info("Overwatch Match Alert starting...")
 
     # Create detector
     detector = MatchDetector()

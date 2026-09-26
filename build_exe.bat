@@ -1,9 +1,9 @@
 @echo off
-echo Building Overwatch 2 Match Notifier...
+echo Building Overwatch Match Alert...
 
 :: Clean up old builds
 rmdir /S /Q build
-rmdir /S /Q dist_builds\OW2_Match_Notifier.exe
+rmdir /S /Q dist_builds\Overwatch_Match_Alert.exe
 
 :: Run PyInstaller
 pyinstaller --noconfirm ^
@@ -12,9 +12,9 @@ pyinstaller --noconfirm ^
     --icon=icon.ico ^
     --add-data "masked_screenshots;masked_screenshots" ^
     --add-data "icon.png;." ^
-    --name "OW2_Match_Notifier" ^
+    --name "Overwatch_Match_Alert" ^
     --distpath "dist_builds" ^
-    ow_notifier.py
+    ow_match_alert.py
 
 echo.
 echo Build complete! The new executable is located in the dist_builds folder.
