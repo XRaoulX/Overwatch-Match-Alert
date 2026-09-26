@@ -554,6 +554,9 @@ class AppState:
     match_found_count: int = 0
     debug_mode: bool = False
     status_text: str = "Starting..."
+    # Automated arming state
+    auto_dormant: bool = False
+    current_mode: str = "INIT"
     # Track if we already notified for this search session
     notified_this_session: bool = False
     
@@ -605,8 +608,13 @@ def scanner_loop(state: AppState, detector: MatchDetector,
 
     while state.running:
         if not state.scanning:
-            if "Dormant" not in state.status_text and "paused" not in state.status_text.lower():
-                state.update_status("Paused / Dormant")
+            if state.current_mode != "GRAY":
+                state.current_mode = "GRAY"
+                state.set_icon_color(ICON_COLOR_PAUSED)
+                if state.debug_mode:
+                    logging.debug("Mode changed to GRAY (Manual Pause)")
+            if "paused" not in state.status_text.lower():
+                state.update_status("Paused manually")
             time.sleep(1.0)
             continue
 
@@ -614,11 +622,50 @@ def scanner_loop(state: AppState, detector: MatchDetector,
         hwnd = find_target_window(state)
         if not hwnd:
             state.update_status("Target window not found - waiting...")
-            state.notified_this_session = False
             time.sleep(SCAN_INTERVAL_IDLE)
             continue
 
-        # Capture the window using WGC (works even when minimized).
+        is_foreground = (hwnd == win32gui.GetForegroundWindow())
+
+        # If Overwatch is in foreground, we enter GREEN mode (In-Game / Dormant)
+        if is_foreground:
+            state.auto_dormant = False  # Clear auto-dormant since user is physically in the game
+            if state.current_mode != "GREEN":
+                state.current_mode = "GREEN"
+                state.set_icon_color(ICON_COLOR_FOUND)
+                state.notified_this_session = False
+                state.update_status("In-game (Active Window)")
+                if state.debug_mode:
+                    logging.debug("Mode changed to GREEN (Game in foreground)")
+            
+            # Release capture resources to save CPU while playing
+            screen_capture.release()
+            time.sleep(1.0)
+            continue
+
+        # If we have auto_dormant set (match recently found, user hasn't tabbed in yet)
+        if state.auto_dormant:
+            if state.current_mode != "GREEN":
+                state.current_mode = "GREEN"
+                state.set_icon_color(ICON_COLOR_FOUND)
+                state.update_status(f"Dormant (match #{state.match_found_count} found)")
+                if state.debug_mode:
+                    logging.debug("Mode changed to GREEN (Match Found auto-dormant)")
+            
+            # Release capture resources
+            screen_capture.release()
+            time.sleep(1.0)
+            continue
+
+        # Otherwise, game is backgrounded and not auto_dormant. Enter ORANGE mode (Scanning)
+        if state.current_mode != "ORANGE":
+            state.current_mode = "ORANGE"
+            state.set_icon_color(ICON_COLOR_ACTIVE)
+            state.update_status("Scanner running - looking for match...")
+            if state.debug_mode:
+                logging.debug("Mode changed to ORANGE (Game in background, scanning)")
+
+        # Capture the window using WGC
         image = screen_capture.grab(hwnd)
         if image is None:
             state.update_status("Screenshot failed - retrying...")
@@ -689,16 +736,9 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                     logging.info("Auto-focusing Overwatch window")
                     bring_window_to_front(hwnd)
 
-                # Go dormant: pause scanning and release capture resources
-                logging.info("Going dormant - re-enable scanning to resume")
-                state.scanning = False
-                state.set_icon_color(ICON_COLOR_FOUND)
-                screen_capture.release()
-                state.update_status(
-                    f"Dormant (match #{state.match_found_count} found) "
-                    f"- re-enable scanning to resume"
-                )
-                continue
+                # Trigger automated dormancy
+                logging.info("Match found - enabling auto_dormant mode")
+                state.auto_dormant = True
 
         elif result.state == GameState.IN_LOBBY:
             state.update_status(f"In lobby (conf={result.confidence:.2f})")
@@ -718,16 +758,9 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                 if state.auto_focus:
                     bring_window_to_front(hwnd)
 
-                # Go dormant
-                logging.info("Going dormant - re-enable scanning to resume")
-                state.scanning = False
-                state.set_icon_color(ICON_COLOR_FOUND)
-                screen_capture.release()
-                state.update_status(
-                    f"Dormant (match #{state.match_found_count} found) "
-                    f"- re-enable scanning to resume"
-                )
-                continue
+                # Trigger automated dormancy
+                logging.info("Lobby found - enabling auto_dormant mode")
+                state.auto_dormant = True
 
         elif result.state == GameState.SEARCHING:
             state.update_status(f"Searching for game... (scan #{state.scan_count})")
@@ -803,9 +836,10 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         state.scanning = not state.scanning
         if state.scanning:
             state.notified_this_session = False
+            state.auto_dormant = False
             state.set_icon_color(ICON_COLOR_ACTIVE)
             state.update_status("Scanning resumed...")
-            logging.info("Scanning resumed")
+            logging.info("Scanning resumed (Auto-mode re-armed)")
         else:
             state.set_icon_color(ICON_COLOR_PAUSED)
             state.update_status("Scanning paused")
