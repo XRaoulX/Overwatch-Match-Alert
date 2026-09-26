@@ -48,6 +48,13 @@ except ImportError:
     HAS_MSS = False
 
 # ---------------------------------------------------------------------------
+# App Info
+# ---------------------------------------------------------------------------
+
+APP_NAME = "Overwatch Match Alert"
+VERSION = "1.1.0-dev.1"
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -883,7 +890,7 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
     icon = pystray.Icon(
         "ow_match_alert",
         icon=create_circle_icon(initial_color),
-        title="Overwatch Match Alert",
+        title=f"{APP_NAME} v{VERSION}",
         menu=pystray.Menu(
             pystray.MenuItem(
                 lambda text: f"Status: {state.status_text[:50]}",
@@ -1058,7 +1065,7 @@ def main():
     file_handler.setFormatter(log_formatter)
     root_logger.addHandler(file_handler)
 
-    logging.info("Overwatch Match Alert starting...")
+    logging.info(f"{APP_NAME} v{VERSION} starting...")
 
     # Create detector
     detector = MatchDetector()
