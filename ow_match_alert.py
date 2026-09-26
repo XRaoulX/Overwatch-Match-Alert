@@ -630,10 +630,12 @@ def scanner_loop(state: AppState, detector: MatchDetector,
         # If Overwatch is in foreground, we enter GREEN mode (In-Game / Dormant)
         if is_foreground:
             state.auto_dormant = False  # Clear auto-dormant since user is physically in the game
+            # Always reset session tracking when user is in the game,
+            # so that the next time they alt-tab out we start fresh
+            state.notified_this_session = False
             if state.current_mode != "GREEN":
                 state.current_mode = "GREEN"
                 state.set_icon_color(ICON_COLOR_FOUND)
-                state.notified_this_session = False
                 state.update_status("In-game (Active Window)")
                 if state.debug_mode:
                     logging.debug("Mode changed to GREEN (Game in foreground)")
@@ -660,6 +662,8 @@ def scanner_loop(state: AppState, detector: MatchDetector,
         # Otherwise, game is backgrounded and not auto_dormant. Enter ORANGE mode (Scanning)
         if state.current_mode != "ORANGE":
             state.current_mode = "ORANGE"
+            state.auto_dormant = False
+            state.notified_this_session = False
             state.set_icon_color(ICON_COLOR_ACTIVE)
             state.update_status("Scanner running - looking for match...")
             if state.debug_mode:
