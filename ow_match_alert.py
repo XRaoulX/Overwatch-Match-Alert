@@ -625,7 +625,7 @@ def scanner_loop(state: AppState, detector: MatchDetector,
             time.sleep(SCAN_INTERVAL_IDLE)
             continue
 
-        is_foreground = (hwnd == win32gui.GetForegroundWindow())
+        is_foreground = (hwnd == user32.GetForegroundWindow())
 
         # If Overwatch is in foreground, we enter GREEN mode (In-Game / Dormant)
         if is_foreground:
