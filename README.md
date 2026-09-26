@@ -25,8 +25,8 @@ Because of how Windows 10/11 handles hardware-accelerated games, **you CANNOT fu
 
 ### 1. Portable Executable (Recommended)
 You do not need Python installed! 
-1. Open the `dist_builds` folder.
-2. Double click **`OW2_Match_Notifier.exe`**.
+1. Download **`OW2_Match_Notifier.exe`** and place it anywhere on your PC (e.g., your Desktop).
+2. Double-click the file to run it.
 3. It will launch directly into your Windows System Tray (bottom right corner of your taskbar).
 
 ### 2. System Tray Controls
