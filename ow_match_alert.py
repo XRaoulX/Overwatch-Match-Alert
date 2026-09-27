@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.7"
+VERSION = "1.1.0-dev.8"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -1005,6 +1005,31 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
     def on_test_phone_alert(icon, item):
         send_ntfy_alert("Test Alert", "Phone notification is working!")
 
+    def on_toggle_phone_alerts(icon, item):
+        config.read(CONFIG_FILE)
+        current = config.getboolean('PhoneAlerts', 'enabled', fallback=False)
+        new_state = not current
+        config.set('PhoneAlerts', 'enabled', str(new_state).lower())
+        with open(CONFIG_FILE, 'w') as f:
+            config.write(f)
+        
+        # Log and force a UI redraw to update the checkmark immediately
+        status = "enabled" if new_state else "disabled"
+        logging.info(f"Phone alerts {status}")
+        state.set_icon_color()
+
+    def phone_alerts_checked(item):
+        config.read(CONFIG_FILE)
+        return config.getboolean('PhoneAlerts', 'enabled', fallback=False)
+
+    def on_copy_topic(icon, item):
+        config.read(CONFIG_FILE)
+        topic = config.get('PhoneAlerts', 'ntfy_topic', fallback='')
+        if topic:
+            import subprocess
+            subprocess.run(['clip.exe'], input=topic.encode('utf-16le'), check=False)
+            send_notification("Copied to Clipboard", f"ntfy Topic: {topic}", str(SCRIPT_DIR / "icon.png"))
+
     def on_quit(icon, item):
         state.running = False
         icon.stop()
@@ -1083,8 +1108,19 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Test Notification (Desktop)", on_test_notification),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "Phone Alerts (ntfy.sh)",
+                on_toggle_phone_alerts,
+                checked=phone_alerts_checked,
+            ),
+            pystray.MenuItem(
+                lambda text: f"Copy Topic: {config.get('PhoneAlerts', 'ntfy_topic', fallback='')}",
+                on_copy_topic,
+            ),
             pystray.MenuItem("Test Phone Alert", on_test_phone_alert),
-            pystray.MenuItem("Phone Alert Setup (ntfy.sh)...", on_phone_alert_setup),
+            pystray.MenuItem("Advanced Phone Setup...", on_phone_alert_setup),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", on_quit),
         ),
     )
