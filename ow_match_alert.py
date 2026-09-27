@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.8"
+VERSION = "1.1.0-dev.9"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -198,9 +198,9 @@ def find_target_window(state: 'AppState') -> Optional[int]:
             state.target_hwnd = None
             state.target_title = "Auto-detect (Overwatch)"
 
-    # Auto-detect mode
+    # Auto-detect mode: match exactly "Overwatch"
     matches = [(hwnd, title) for hwnd, title in get_visible_windows()
-               if OW_WINDOW_TITLE.lower() in title.lower()]
+               if title == OW_WINDOW_TITLE]
     if getattr(state, 'debug_mode', False) and matches:
         if len(matches) > 1:
             logging.debug(f"find_target_window: Multiple OW windows found: {matches}")
@@ -947,8 +947,8 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
 
     def window_submenu():
         windows = get_visible_windows()
-        # Sort so Overwatch windows are at the top, then alphabetically
-        windows.sort(key=lambda x: (OW_WINDOW_TITLE.lower() not in x[1].lower(), x[1].lower()))
+        # Sort so exact Overwatch window is at the top, then alphabetically
+        windows.sort(key=lambda x: (x[1] != OW_WINDOW_TITLE, x[1].lower()))
         
         items = [
             pystray.MenuItem(
