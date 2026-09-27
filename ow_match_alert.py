@@ -73,7 +73,7 @@ DEBUG_DIR = APP_DATA_DIR / "debug_screenshots"
 OW_WINDOW_TITLE = "Overwatch"
 
 # Detection intervals
-SCAN_INTERVAL_SEARCHING = 1.0   # seconds between scans while searching
+SCAN_INTERVAL_SEARCHING = 0.33  # seconds between scans while searching
 SCAN_INTERVAL_IDLE = 3.0        # seconds between scans when game not in search
 
 # Template matching threshold (0-1, higher = stricter)
@@ -469,15 +469,11 @@ class MatchDetector:
         if w != self._cached_w or h != self._cached_h:
             self._build_resolution_cache(w, h)
             
-        best_found_conf = 0.0
-        best_found_method = ""
-        
-        best_search_conf = 0.0
-        best_search_method = ""
-        
         import math
-        
-        for name, tinfo in self._scaled_templates.items():
+        THRESHOLD = 0.90 # Super strict match needed since we use masked RMSE
+
+        # Helper to compute confidence
+        def compute_conf(tinfo):
             sx, sy, sw, sh = tinfo['sx'], tinfo['sy'], tinfo['sw'], tinfo['sh']
             search_region = image[sy:sy+sh, sx:sx+sw]
             
@@ -486,34 +482,46 @@ class MatchDetector:
             valid_pixels = tinfo['valid_pixels']
             
             if search_region.shape[0] < template.shape[0] or search_region.shape[1] < template.shape[1]:
-                continue
+                return 0.0
                 
             res = cv2.matchTemplate(search_region, template, cv2.TM_SQDIFF, mask=mask)
             min_val, _, _, _ = cv2.minMaxLoc(res)
             
             if valid_pixels > 0:
                 # Calculate Root Mean Square Error (RMSE) per channel per masked pixel
-                # Protect against floating point inaccuracies giving slightly negative min_val
                 rmse = math.sqrt(max(0.0, min_val) / (valid_pixels * 3))
                 # Map RMSE to confidence (0 RMSE = 1.0 conf, 255 RMSE = 0.0 conf)
-                conf = max(0.0, 1.0 - (rmse / 255.0))
-            else:
-                conf = 0.0
+                return max(0.0, 1.0 - (rmse / 255.0))
+            return 0.0
+
+        # Pre-split templates if not already done, but iterating keys is fast enough
+        # We prioritize GAME_FOUND checks because it's the more important transition
+        found_templates = {k: v for k, v in self._scaled_templates.items() if "searching" not in k.lower()}
+        search_templates = {k: v for k, v in self._scaled_templates.items() if "searching" in k.lower()}
+
+        # 1. Check for GAME_FOUND (Early exit)
+        best_found_conf = 0.0
+        best_found_method = ""
+        for name, tinfo in found_templates.items():
+            conf = compute_conf(tinfo)
+            if conf > best_found_conf:
+                best_found_conf = conf
+                best_found_method = name
+            if conf > THRESHOLD:
+                return DetectionResult(GameState.GAME_FOUND, conf, name)
+
+        # 2. Check for SEARCHING (Early exit)
+        best_search_conf = 0.0
+        best_search_method = ""
+        for name, tinfo in search_templates.items():
+            conf = compute_conf(tinfo)
+            if conf > best_search_conf:
+                best_search_conf = conf
+                best_search_method = name
+            if conf > THRESHOLD:
+                return DetectionResult(GameState.SEARCHING, conf, name)
                 
-            if "searching" in name.lower():
-                if conf > best_search_conf:
-                    best_search_conf = conf
-                    best_search_method = name
-            else:
-                # Anything not 'searching' is a game found/lobby state
-                if conf > best_found_conf:
-                    best_found_conf = conf
-                    best_found_method = name
-                    
-        # State evaluation
-        THRESHOLD = 0.90 # Super strict match needed since we use masked RMSE
-        
-        # If we have a very strong match for found, trigger it!
+        # If no early exit hit, fall back to best matches or UNKNOWN
         if best_found_conf > THRESHOLD:
             return DetectionResult(GameState.GAME_FOUND, best_found_conf, best_found_method)
             
