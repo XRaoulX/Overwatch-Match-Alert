@@ -1,10 +1,19 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Check git branch
+for /f "tokens=*" %%g in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set BRANCH=%%g
+
 :: Extract version from python script
 for /f "tokens=3" %%a in ('findstr /C:"VERSION =" ow_match_alert.py') do set VER=%%a
 set VER=%VER:"=%
-set EXE_NAME=Overwatch_Match_Alert_v%VER%
+
+:: Main branch always outputs static "Overwatch_Match_Alert.exe", other branches include version tag
+if "%BRANCH%"=="main" (
+    set EXE_NAME=Overwatch_Match_Alert
+) else (
+    set EXE_NAME=Overwatch_Match_Alert_v%VER%
+)
 
 echo Building %EXE_NAME%...
 
