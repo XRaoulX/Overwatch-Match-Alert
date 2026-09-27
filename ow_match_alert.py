@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.6"
+VERSION = "1.1.0-dev.7"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -620,6 +620,7 @@ def send_ntfy_alert(title: str, message: str):
         req = urllib.request.Request(url, data=data, method='POST')
         req.add_header('Title', title.encode('utf-8'))
         req.add_header('Tags', 'video_game,loudspeaker')
+        req.add_header('Priority', 'urgent')
         
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status == 200:
@@ -857,7 +858,7 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                     # Send push notification
                     send_ntfy_alert(
                         "Overwatch Match Found!",
-                        "Your match is ready to accept."
+                        "Match Found."
                     )
 
                     # Play alert sound
@@ -884,6 +885,10 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                     send_notification(
                         "Overwatch - In Lobby!",
                         "Match started - you're in the lobby!"
+                    )
+                    send_ntfy_alert(
+                        "Overwatch Match Found!",
+                        "Match Found."
                     )
                     play_alert_sound()
 
