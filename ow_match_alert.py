@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Optional, Deque
+from typing import Optional, Deque, Any
 from collections import deque
 
 
@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.9"
+VERSION = "1.1.0-dev.10"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -74,7 +74,8 @@ TEMPLATES_DIR = SCRIPT_DIR / "masked_screenshots"
 DEBUG_DIR = APP_DATA_DIR / "debug_screenshots"
 CONFIG_FILE = APP_DATA_DIR / "config.ini"
 
-DEFAULT_CONFIG = f"""[PhoneAlerts]
+def generate_default_config():
+    return f"""[PhoneAlerts]
 # Set enabled to true to receive phone notifications
 enabled = false
 
@@ -88,16 +89,17 @@ config = configparser.ConfigParser()
 if not CONFIG_FILE.exists():
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, 'w') as f:
-        f.write(DEFAULT_CONFIG)
+        f.write(generate_default_config())
 
 config.read(CONFIG_FILE)
 
 # Ensure PhoneAlerts section exists in older configs
 if 'PhoneAlerts' not in config:
     with open(CONFIG_FILE, 'a') as f:
-        f.write("\n" + DEFAULT_CONFIG)
+        f.write("\n" + generate_default_config())
     config.read(CONFIG_FILE)
-# Overwatch 2 window title (partial match)
+
+# Overwatch 2 window title (exact match)
 OW_WINDOW_TITLE = "Overwatch"
 
 # Detection intervals
@@ -443,6 +445,8 @@ class MatchDetector:
         self._cached_w = 0
         self._cached_h = 0
         self._scaled_templates = {}
+        self.found_templates = {}
+        self.search_templates = {}
 
     def _build_resolution_cache(self, w: int, h: int):
         """Pre-computes scaled templates, masks, and bounding boxes for the current resolution."""
@@ -487,6 +491,10 @@ class MatchDetector:
                         'sx': sx, 'sy': sy, 'sw': sw, 'sh': sh,
                         'valid_pixels': valid_pixels
                     }
+        
+        # Cache the separated dictionaries for faster lookup in detect()
+        self.found_templates = {k: v for k, v in self._scaled_templates.items() if "searching" not in k.lower()}
+        self.search_templates = {k: v for k, v in self._scaled_templates.items() if "searching" in k.lower()}
 
     def detect(self, image: np.ndarray) -> DetectionResult:
         """
@@ -522,15 +530,10 @@ class MatchDetector:
                 return max(0.0, 1.0 - (rmse / 255.0))
             return 0.0
 
-        # Pre-split templates if not already done, but iterating keys is fast enough
-        # We prioritize GAME_FOUND checks because it's the more important transition
-        found_templates = {k: v for k, v in self._scaled_templates.items() if "searching" not in k.lower()}
-        search_templates = {k: v for k, v in self._scaled_templates.items() if "searching" in k.lower()}
-
         # 1. Check for GAME_FOUND (Early exit)
         best_found_conf = 0.0
         best_found_method = ""
-        for name, tinfo in found_templates.items():
+        for name, tinfo in self.found_templates.items():
             conf = compute_conf(tinfo)
             if conf > best_found_conf:
                 best_found_conf = conf
@@ -541,7 +544,7 @@ class MatchDetector:
         # 2. Check for SEARCHING (Early exit)
         best_search_conf = 0.0
         best_search_method = ""
-        for name, tinfo in search_templates.items():
+        for name, tinfo in self.search_templates.items():
             conf = compute_conf(tinfo)
             if conf > best_search_conf:
                 best_search_conf = conf
@@ -549,13 +552,6 @@ class MatchDetector:
             if conf > THRESHOLD:
                 return DetectionResult(GameState.SEARCHING, conf, name)
                 
-        # If no early exit hit, fall back to best matches or UNKNOWN
-        if best_found_conf > THRESHOLD:
-            return DetectionResult(GameState.GAME_FOUND, best_found_conf, best_found_method)
-            
-        if best_search_conf > THRESHOLD:
-            return DetectionResult(GameState.SEARCHING, best_search_conf, best_search_method)
-            
         return DetectionResult(GameState.UNKNOWN, 0.0, "none")
 
 
@@ -614,21 +610,27 @@ def send_ntfy_alert(title: str, message: str):
         if not topic:
             return
             
-        url = f"https://ntfy.sh/{topic}"
-        data = message.encode('utf-8')
-        
-        req = urllib.request.Request(url, data=data, method='POST')
-        req.add_header('Title', title.encode('utf-8'))
-        req.add_header('Tags', 'video_game,loudspeaker')
-        req.add_header('Priority', 'urgent')
-        
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                logging.info(f"Phone alert sent to ntfy.sh/{topic}")
-            else:
-                logging.warning(f"Phone alert failed with status: {response.status}")
+        def _post():
+            try:
+                url = f"https://ntfy.sh/{topic}"
+                data = message.encode('utf-8')
+                
+                req = urllib.request.Request(url, data=data, method='POST')
+                req.add_header('Title', title.encode('utf-8'))
+                req.add_header('Tags', 'video_game,loudspeaker')
+                req.add_header('Priority', 'urgent')
+                
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    if response.status == 200:
+                        logging.info(f"Phone alert sent to ntfy.sh/{topic}")
+                    else:
+                        logging.warning(f"Phone alert failed with status: {response.status}")
+            except Exception as e:
+                logging.error(f"Failed to send phone alert: {e}")
+                
+        threading.Thread(target=_post, daemon=True).start()
     except Exception as e:
-        logging.error(f"Failed to send phone alert: {e}")
+        logging.error(f"Failed to process phone alert request: {e}")
 
 
 
@@ -1009,9 +1011,17 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         config.read(CONFIG_FILE)
         current = config.getboolean('PhoneAlerts', 'enabled', fallback=False)
         new_state = not current
-        config.set('PhoneAlerts', 'enabled', str(new_state).lower())
-        with open(CONFIG_FILE, 'w') as f:
-            config.write(f)
+        
+        try:
+            import re
+            with open(CONFIG_FILE, 'r') as f:
+                content = f.read()
+            content = re.sub(r'^(enabled\s*=\s*)(true|false)', rf'\g<1>{str(new_state).lower()}', content, flags=re.MULTILINE|re.IGNORECASE)
+            with open(CONFIG_FILE, 'w') as f:
+                f.write(content)
+            config.read(CONFIG_FILE)
+        except Exception as e:
+            logging.error(f"Failed to update config file text: {e}")
         
         # Log and force a UI redraw to update the checkmark immediately
         status = "enabled" if new_state else "disabled"
@@ -1019,11 +1029,9 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         state.set_icon_color()
 
     def phone_alerts_checked(item):
-        config.read(CONFIG_FILE)
         return config.getboolean('PhoneAlerts', 'enabled', fallback=False)
 
     def on_copy_topic(icon, item):
-        config.read(CONFIG_FILE)
         topic = config.get('PhoneAlerts', 'ntfy_topic', fallback='')
         if topic:
             import subprocess

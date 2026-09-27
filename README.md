@@ -1,4 +1,4 @@
-# Overwatch 2 Match Found Notifier (v1.0.0)
+# Overwatch 2 Match Found Notifier (v1.1.0)
 
 A lightweight, portable Windows system-tray application that silently watches your Overwatch 2 game in the background and sends you a desktop notification (and optionally Alt-Tabs you back in) the moment your queue pops and a match is found!
 
@@ -30,20 +30,21 @@ You do not need Python installed!
 3. It will launch directly into your Windows System Tray (bottom right corner of your taskbar).
 
 ### 2. System Tray Controls
-Left-click or Right-click the app icon in your system tray to access controls:
+Right-click the app icon in your system tray to access controls:
 * **Scanning:** Toggle the match scanner on or off. 
   * 🟠 **Orange Icon:** Actively scanning for a match.
   * 🟢 **Green Icon:** Match found! (Scanner goes dormant to save resources).
   * 🔘 **Gray Icon:** Manually paused.
 * **Auto-focus game (Alt-Tab):** If checked, the app will automatically force Overwatch 2 to the front of your screen the exact second a match is found.
-* **Select Target Window:** If you have multiple Overwatch accounts or windows open, you can explicitly lock the scanner to a specific window.
+* **Select Target Window:** Explicitly lock the scanner to a specific Overwatch window (the app uses exact title matching to find the game automatically by default).
+* **Phone Alerts (ntfy.sh):** Toggle push notifications to your phone on or off. You can easily copy your unique channel topic to your clipboard from the menu below it.
 * **🔴 DEBUG MODE ON:** Instantly turns on aggressive logging and saves the last 10 screenshots to your disk if you need to troubleshoot why a match wasn't detected.
 
-### 3. Debugging & Logs
-When you toggle Debug Mode on, the app will begin saving debug information safely out of the way in your user directory:
-`C:\Users\<YourUser>\.ow_notifier\`
-* `ow_notifier.log` - Rotating log file (capped at 5MB) detailing match confidences.
-* `debug_screenshots/` - Automatically stores the 10 most recent "Searching" and "Found" frames so you can see exactly what the scanner saw.
+### 3. Config & Logs
+The app automatically creates a folder in your user directory: `C:\Users\<YourUser>\.ow_notifier\`
+* `config.ini` - Settings file for Phone Alerts.
+* `ow_notifier.log` - Rotating log file (capped at 5MB).
+* `debug_screenshots/` - (When debug is on) stores recent frames so you can see exactly what the scanner saw.
 
 ## For Developers
 
