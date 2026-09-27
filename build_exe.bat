@@ -2,9 +2,9 @@
 setlocal enabledelayedexpansion
 
 :: Extract version from python script
-for /f "delims=" %%i in ('python -c "import re; print(re.search(r'VERSION\s*=\s*[\"']([^\"']+)[\"']', open('ow_match_alert.py', encoding='utf-8').read()).group(1))"') do set VERSION=%%i
-
-set EXE_NAME=Overwatch_Match_Alert_v%VERSION%
+for /f "tokens=3" %%a in ('findstr /C:"VERSION =" ow_match_alert.py') do set VER=%%a
+set VER=%VER:"=%
+set EXE_NAME=Overwatch_Match_Alert_v%VER%
 
 echo Building %EXE_NAME%...
 

@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.1"
+VERSION = "1.1.0-dev.2"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -171,9 +171,14 @@ def find_target_window(state: 'AppState') -> Optional[int]:
             state.target_title = "Auto-detect (Overwatch)"
 
     # Auto-detect mode
-    for hwnd, title in get_visible_windows():
-        if OW_WINDOW_TITLE.lower() in title.lower():
-            return hwnd
+    matches = [(hwnd, title) for hwnd, title in get_visible_windows()
+               if OW_WINDOW_TITLE.lower() in title.lower()]
+    if getattr(state, 'debug_mode', False) and matches:
+        if len(matches) > 1:
+            logging.debug(f"find_target_window: Multiple OW windows found: {matches}")
+        logging.debug(f"find_target_window: Returning hwnd={matches[0][0]}, title='{matches[0][1]}'")
+    if matches:
+        return matches[0][0]
 
     return None
 
@@ -612,181 +617,212 @@ def scanner_loop(state: AppState, detector: MatchDetector,
     """
     logging.info(f"Scanner started (capture backend: {screen_capture.backend_name})")
     state.update_status("Scanner running - looking for Overwatch...")
+    _last_focus_debug_time = 0.0  # throttle focus debug logs
 
     while state.running:
-        if not state.scanning:
-            if state.current_mode != "GRAY":
-                state.current_mode = "GRAY"
-                state.set_icon_color(ICON_COLOR_PAUSED)
-                if state.debug_mode:
-                    logging.debug("Mode changed to GRAY (Manual Pause)")
-            if "paused" not in state.status_text.lower():
-                state.update_status("Paused manually")
-            time.sleep(1.0)
-            continue
+        try:
+            if not state.scanning:
+                if state.current_mode != "GRAY":
+                    state.current_mode = "GRAY"
+                    state.set_icon_color(ICON_COLOR_PAUSED)
+                    if state.debug_mode:
+                        logging.debug("Mode changed to GRAY (Manual Pause)")
+                if "paused" not in state.status_text.lower():
+                    state.update_status("Paused manually")
+                time.sleep(1.0)
+                continue
 
-        # Find target window (used to confirm OW is running + for auto-focus + capture)
-        hwnd = find_target_window(state)
-        if not hwnd:
-            state.update_status("Target window not found - waiting...")
-            time.sleep(SCAN_INTERVAL_IDLE)
-            continue
+            # Find target window (used to confirm OW is running + for auto-focus + capture)
+            hwnd = find_target_window(state)
+            if not hwnd:
+                state.update_status("Target window not found - waiting...")
+                time.sleep(SCAN_INTERVAL_IDLE)
+                continue
 
-        is_foreground = (hwnd == user32.GetForegroundWindow())
-
-        # If Overwatch is in foreground, we enter GREEN mode (In-Game / Dormant)
-        if is_foreground:
-            state.auto_dormant = False  # Clear auto-dormant since user is physically in the game
-            # Always reset session tracking when user is in the game,
-            # so that the next time they alt-tab out we start fresh
-            state.notified_this_session = False
-            if state.current_mode != "GREEN":
-                state.current_mode = "GREEN"
-                state.set_icon_color(ICON_COLOR_FOUND)
-                state.update_status("In-game (Active Window)")
-                if state.debug_mode:
-                    logging.debug("Mode changed to GREEN (Game in foreground)")
-            
-            # Release capture resources to save CPU while playing
-            screen_capture.release()
-            time.sleep(1.0)
-            continue
-
-        # If we have auto_dormant set (match recently found, user hasn't tabbed in yet)
-        if state.auto_dormant:
-            if state.current_mode != "GREEN":
-                state.current_mode = "GREEN"
-                state.set_icon_color(ICON_COLOR_FOUND)
-                state.update_status(f"Dormant (match #{state.match_found_count} found)")
-                if state.debug_mode:
-                    logging.debug("Mode changed to GREEN (Match Found auto-dormant)")
-            
-            # Release capture resources
-            screen_capture.release()
-            time.sleep(1.0)
-            continue
-
-        # Otherwise, game is backgrounded and not auto_dormant. Enter ORANGE mode (Scanning)
-        if state.current_mode != "ORANGE":
-            state.current_mode = "ORANGE"
-            state.auto_dormant = False
-            state.notified_this_session = False
-            state.set_icon_color(ICON_COLOR_ACTIVE)
-            state.update_status("Scanner running - looking for match...")
-            if state.debug_mode:
-                logging.debug("Mode changed to ORANGE (Game in background, scanning)")
-
-        # Capture the window using WGC
-        image = screen_capture.grab(hwnd)
-        if image is None:
-            state.update_status("Screenshot failed - retrying...")
-            time.sleep(SCAN_INTERVAL_SEARCHING)
-            continue
-
-        state.scan_count += 1
-
-        # Run detection
-        result = detector.detect(image)
-
-        # Unified debug saving logic
-        if state.debug_mode:
-            DEBUG_DIR.mkdir(exist_ok=True)
-            state_name = result.state.name
-            
-            # Format differently based on the state
-            if result.state == GameState.GAME_FOUND:
-                # We use +1 because match_found_count increments later in the loop
-                next_found_id = state.match_found_count + (1 if not state.notified_this_session else 0)
-                file_name = f"FOUND_{next_found_id:04d}.png"
-                pattern = "FOUND_*.png"
-            else:
-                file_name = f"scan_{state.scan_count:06d}_{state_name}.png"
-                pattern = f"scan_*_{state_name}.png"
-                
-            dump_path = DEBUG_DIR / file_name
-            
-            # Save the new screenshot
-            cv2.imwrite(str(dump_path), image)
-            
-            # Keep only the 10 most recent images for this state category
-            existing_files = sorted(DEBUG_DIR.glob(pattern))
-            while len(existing_files) > 10:
-                oldest = existing_files.pop(0)
+            # Determine if Overwatch window is the foreground window
+            is_foreground = (hwnd == user32.GetForegroundWindow())
+            # Debug logging for focus detection (throttled to every 5s)
+            if state.debug_mode and (time.time() - _last_focus_debug_time >= 5.0):
+                _last_focus_debug_time = time.time()
+                fg_hwnd = user32.GetForegroundWindow()
+                def _get_title(h):
+                    length = user32.GetWindowTextLengthW(h)
+                    if length > 0:
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(h, buf, length + 1)
+                        return buf.value
+                    return "(no title)"
                 try:
-                    oldest.unlink()
+                    ow_title = _get_title(hwnd) if hwnd else "N/A"
+                    fg_title = _get_title(fg_hwnd) if fg_hwnd else "N/A"
                 except Exception as e:
-                    logging.debug(f"Failed to delete old debug file: {e}")
-
-        # Handle state transitions
-        prev_state = state.last_state
-
-        if result.state == GameState.GAME_FOUND:
-            state.update_status(
-                f"GAME FOUND! (conf={result.confidence:.2f}, method={result.method})"
-            )
-            logging.info(
-                f"GAME FOUND! confidence={result.confidence:.2f} method={result.method}"
-            )
-
-            if not state.notified_this_session:
-                state.notified_this_session = True
-                state.match_found_count += 1
-
-                # Send notification
-                send_notification(
-                    "Overwatch - Game Found!",
-                    "Your match is ready!",
-                    str(SCRIPT_DIR / "icon.png")
+                    ow_title = "error"
+                    fg_title = "error"
+                    logging.debug(f"Focus debug exception: {e}")
+                logging.debug(
+                    f"Focus Debug - OW_hwnd={hwnd}, OW_title='{ow_title}', "
+                    f"FG_hwnd={fg_hwnd}, FG_title='{fg_title}', "
+                    f"is_foreground={is_foreground}, current_mode={state.current_mode}, "
+                    f"auto_dormant={state.auto_dormant}, notified={state.notified_this_session}"
                 )
 
-                # Play alert sound
-                play_alert_sound()
+            # If Overwatch is in foreground, we enter GREEN mode (In-Game / Dormant)
+            if is_foreground:
+                state.auto_dormant = False  # Clear auto-dormant since user is physically in the game
+                # Always reset session tracking when user is in the game,
+                # so that the next time they alt-tab out we start fresh
+                state.notified_this_session = False
+                if state.current_mode != "GREEN":
+                    state.current_mode = "GREEN"
+                    state.set_icon_color(ICON_COLOR_FOUND)
+                    state.update_status("In-game (Active Window)")
+                    if state.debug_mode:
+                        logging.debug("Mode changed to GREEN (Game in foreground)")
+                    # Release capture resources only on transition to save CPU
+                    screen_capture.release()
+                
+                time.sleep(1.0)
+                continue
 
-                # Auto-focus if enabled
-                if state.auto_focus:
-                    logging.info("Auto-focusing Overwatch window")
-                    bring_window_to_front(hwnd)
+            # If we have auto_dormant set (match recently found, user hasn't tabbed in yet)
+            if state.auto_dormant:
+                if state.current_mode != "GREEN":
+                    state.current_mode = "GREEN"
+                    state.set_icon_color(ICON_COLOR_FOUND)
+                    state.update_status(f"Dormant (match #{state.match_found_count} found)")
+                    if state.debug_mode:
+                        logging.debug("Mode changed to GREEN (Match Found auto-dormant)")
+                    # Release capture resources only on transition
+                    screen_capture.release()
+                
+                time.sleep(1.0)
+                continue
 
-                # Trigger automated dormancy
-                logging.info("Match found - enabling auto_dormant mode")
-                state.auto_dormant = True
+            # Otherwise, game is backgrounded and not auto_dormant. Enter ORANGE mode (Scanning)
+            if state.current_mode != "ORANGE":
+                state.current_mode = "ORANGE"
+                state.auto_dormant = False
+                state.notified_this_session = False
+                state.set_icon_color(ICON_COLOR_ACTIVE)
+                state.update_status("Scanner running - looking for match...")
+                if state.debug_mode:
+                    logging.debug("Mode changed to ORANGE (Game in background, scanning)")
 
-        elif result.state == GameState.IN_LOBBY:
-            state.update_status(f"In lobby (conf={result.confidence:.2f})")
+            # Capture the window using WGC
+            image = screen_capture.grab(hwnd)
+            if image is None:
+                state.update_status("Screenshot failed - retrying...")
+                time.sleep(SCAN_INTERVAL_SEARCHING)
+                continue
 
-            # If we transitioned from searching or unknown to lobby, it means we missed
-            # the "GAME FOUND!" banner - still notify
-            if prev_state in (GameState.SEARCHING, GameState.UNKNOWN) and not state.notified_this_session:
-                state.notified_this_session = True
-                state.match_found_count += 1
+            state.scan_count += 1
 
-                send_notification(
-                    "Overwatch - In Lobby!",
-                    "Match started - you're in the lobby!"
+            # Run detection
+            result = detector.detect(image)
+
+            # Unified debug saving logic
+            if state.debug_mode:
+                DEBUG_DIR.mkdir(exist_ok=True)
+                state_name = result.state.name
+                
+                # Format differently based on the state
+                if result.state == GameState.GAME_FOUND:
+                    # We use +1 because match_found_count increments later in the loop
+                    next_found_id = state.match_found_count + (1 if not state.notified_this_session else 0)
+                    file_name = f"FOUND_{next_found_id:04d}.png"
+                    pattern = "FOUND_*.png"
+                else:
+                    file_name = f"scan_{state.scan_count:06d}_{state_name}.png"
+                    pattern = f"scan_*_{state_name}.png"
+                    
+                dump_path = DEBUG_DIR / file_name
+                
+                # Save the new screenshot
+                cv2.imwrite(str(dump_path), image)
+                
+                # Keep only the 10 most recent images for this state category
+                existing_files = sorted(DEBUG_DIR.glob(pattern))
+                while len(existing_files) > 10:
+                    oldest = existing_files.pop(0)
+                    try:
+                        oldest.unlink()
+                    except Exception as e:
+                        logging.debug(f"Failed to delete old debug file: {e}")
+
+            # Handle state transitions
+            prev_state = state.last_state
+
+            if result.state == GameState.GAME_FOUND:
+                state.update_status(
+                    f"GAME FOUND! (conf={result.confidence:.2f}, method={result.method})"
                 )
-                play_alert_sound()
+                logging.info(
+                    f"GAME FOUND! confidence={result.confidence:.2f} method={result.method}"
+                )
 
-                if state.auto_focus:
-                    bring_window_to_front(hwnd)
+                if not state.notified_this_session:
+                    state.notified_this_session = True
+                    state.match_found_count += 1
 
-                # Trigger automated dormancy
-                logging.info("Lobby found - enabling auto_dormant mode")
-                state.auto_dormant = True
+                    # Send notification
+                    send_notification(
+                        "Overwatch - Game Found!",
+                        "Your match is ready!",
+                        str(SCRIPT_DIR / "icon.png")
+                    )
 
-        elif result.state == GameState.SEARCHING:
-            state.update_status(f"Searching for game... (scan #{state.scan_count})")
-            state.notified_this_session = False  # Reset for next match
+                    # Play alert sound
+                    play_alert_sound()
 
-        elif result.state == GameState.UNKNOWN:
-            state.update_status(f"Monitoring... (scan #{state.scan_count})")
+                    # Auto-focus if enabled
+                    if state.auto_focus:
+                        logging.info("Auto-focusing Overwatch window")
+                        bring_window_to_front(hwnd)
 
-        state.last_state = result.state
+                    # Trigger automated dormancy
+                    logging.info("Match found - enabling auto_dormant mode")
+                    state.auto_dormant = True
 
-        # Adjust scan interval based on state
-        if result.state == GameState.SEARCHING:
-            time.sleep(SCAN_INTERVAL_SEARCHING)
-        else:
-            time.sleep(SCAN_INTERVAL_IDLE)
+            elif result.state == GameState.IN_LOBBY:
+                state.update_status(f"In lobby (conf={result.confidence:.2f})")
+
+                # If we transitioned from searching or unknown to lobby, it means we missed
+                # the "GAME FOUND!" banner - still notify
+                if prev_state in (GameState.SEARCHING, GameState.UNKNOWN) and not state.notified_this_session:
+                    state.notified_this_session = True
+                    state.match_found_count += 1
+
+                    send_notification(
+                        "Overwatch - In Lobby!",
+                        "Match started - you're in the lobby!"
+                    )
+                    play_alert_sound()
+
+                    if state.auto_focus:
+                        bring_window_to_front(hwnd)
+
+                    # Trigger automated dormancy
+                    logging.info("Lobby found - enabling auto_dormant mode")
+                    state.auto_dormant = True
+
+            elif result.state == GameState.SEARCHING:
+                state.update_status(f"Searching for game... (scan #{state.scan_count})")
+                state.notified_this_session = False  # Reset for next match
+
+            elif result.state == GameState.UNKNOWN:
+                state.update_status(f"Monitoring... (scan #{state.scan_count})")
+
+            state.last_state = result.state
+
+            # Adjust scan interval based on state
+            if result.state == GameState.SEARCHING:
+                time.sleep(SCAN_INTERVAL_SEARCHING)
+            else:
+                time.sleep(SCAN_INTERVAL_IDLE)
+
+        except Exception as e:
+            logging.error(f"Scanner loop exception: {e}", exc_info=True)
+            time.sleep(2.0)
 
     # Cleanup
     screen_capture.release()
