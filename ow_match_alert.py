@@ -247,10 +247,10 @@ class ScreenCapture:
         if not HAS_WGC:
             return False
 
-        try:
+        def _setup_cap(draw_border: bool):
             cap = windows_capture.WindowsCapture(
                 window_hwnd=hwnd,
-                draw_border=False,
+                draw_border=draw_border,
                 cursor_capture=False,
             )
 
@@ -266,8 +266,22 @@ class ScreenCapture:
                     self._capture_control = None
                     self._hwnd = None
                 logging.info("WGC session closed by Windows.")
+            
+            return cap
 
-            self._capture_control = cap.start_free_threaded()
+        try:
+            try:
+                # Try without the border first (Requires Windows 11 or newer Win 10 builds)
+                cap = _setup_cap(draw_border=False)
+                self._capture_control = cap.start_free_threaded()
+            except Exception as e:
+                if "border is not supported" in str(e).lower():
+                    logging.info("Hiding capture border unsupported on this OS. Retrying with border enabled.")
+                    cap = _setup_cap(draw_border=True)
+                    self._capture_control = cap.start_free_threaded()
+                else:
+                    raise
+            
             self._hwnd = hwnd
             self._backend = "wgc"
             logging.info(f"Screen capture: Windows Graphics Capture initialized for HWND {hwnd}")
@@ -1017,6 +1031,15 @@ def console_loop(state: AppState, detector: MatchDetector,
             cmd = input("> ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             break
+        except RuntimeError as e:
+            if "sys.stdin" in str(e):
+                logging.warning("Console input not available (running in windowed mode). Running in background...")
+                # Sleep in a loop so the scanner thread can keep running in the background
+                while state.running:
+                    time.sleep(1)
+                break
+            else:
+                raise
 
         if cmd == "q":
             state.running = False
