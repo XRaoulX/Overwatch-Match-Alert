@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.5"
+VERSION = "1.1.0-dev.6"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -668,7 +668,10 @@ class AppState:
 
     def update_status(self, text: str):
         with self._lock:
+            if self.status_text == text:
+                return
             self.status_text = text
+            
         if self.tray_icon:
             try:
                 self.tray_icon.update_menu()
@@ -892,11 +895,11 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                     state.auto_dormant = True
 
             elif result.state == GameState.SEARCHING:
-                state.update_status(f"Searching for game... (scan #{state.scan_count})")
+                state.update_status("Searching for game...")
                 state.notified_this_session = False  # Reset for next match
 
             elif result.state == GameState.UNKNOWN:
-                state.update_status(f"Monitoring... (scan #{state.scan_count})")
+                state.update_status("Monitoring...")
 
             state.last_state = result.state
 

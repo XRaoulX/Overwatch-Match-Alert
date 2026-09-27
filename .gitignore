@@ -21,6 +21,7 @@ build/
 # Local Debug
 debug_screenshots/
 *.log
+logs/
 
 # OS generated files
 .DS_Store
