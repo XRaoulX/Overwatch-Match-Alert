@@ -52,11 +52,15 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.4"
+VERSION = "1.1.0-dev.5"
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants & Config
 # ---------------------------------------------------------------------------
+import configparser
+import urllib.request
+import urllib.parse
+import uuid
 
 if getattr(sys, 'frozen', False):
     # Running in a PyInstaller bundle
@@ -68,7 +72,31 @@ else:
 APP_DATA_DIR = Path.home() / ".ow_notifier"
 TEMPLATES_DIR = SCRIPT_DIR / "masked_screenshots"
 DEBUG_DIR = APP_DATA_DIR / "debug_screenshots"
+CONFIG_FILE = APP_DATA_DIR / "config.ini"
 
+DEFAULT_CONFIG = f"""[PhoneAlerts]
+# Set enabled to true to receive phone notifications
+enabled = false
+
+# Your unique notification topic. Do not share this with others!
+# On your phone, install the 'ntfy' app (Android/iOS) or go to ntfy.sh
+# and subscribe to this exact topic string:
+ntfy_topic = ow_alert_{uuid.uuid4().hex[:8]}
+"""
+
+config = configparser.ConfigParser()
+if not CONFIG_FILE.exists():
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE, 'w') as f:
+        f.write(DEFAULT_CONFIG)
+
+config.read(CONFIG_FILE)
+
+# Ensure PhoneAlerts section exists in older configs
+if 'PhoneAlerts' not in config:
+    with open(CONFIG_FILE, 'a') as f:
+        f.write("\n" + DEFAULT_CONFIG)
+    config.read(CONFIG_FILE)
 # Overwatch 2 window title (partial match)
 OW_WINDOW_TITLE = "Overwatch"
 
@@ -572,6 +600,36 @@ def play_alert_sound():
     except Exception as e:
         logging.debug(f"Sound failed: {e}")
 
+def send_ntfy_alert(title: str, message: str):
+    """Send a push notification via ntfy.sh if enabled in config."""
+    try:
+        # Reload config in case user edited it via the Setup menu
+        config.read(CONFIG_FILE)
+        
+        enabled = config.getboolean('PhoneAlerts', 'enabled', fallback=False)
+        if not enabled:
+            return
+            
+        topic = config.get('PhoneAlerts', 'ntfy_topic', fallback='')
+        if not topic:
+            return
+            
+        url = f"https://ntfy.sh/{topic}"
+        data = message.encode('utf-8')
+        
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('Title', title.encode('utf-8'))
+        req.add_header('Tags', 'video_game,loudspeaker')
+        
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                logging.info(f"Phone alert sent to ntfy.sh/{topic}")
+            else:
+                logging.warning(f"Phone alert failed with status: {response.status}")
+    except Exception as e:
+        logging.error(f"Failed to send phone alert: {e}")
+
+
 
 # ---------------------------------------------------------------------------
 # Main scanner loop
@@ -793,6 +851,12 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                         str(SCRIPT_DIR / "icon.png")
                     )
 
+                    # Send push notification
+                    send_ntfy_alert(
+                        "Overwatch Match Found!",
+                        "Your match is ready to accept."
+                    )
+
                     # Play alert sound
                     play_alert_sound()
 
@@ -921,6 +985,17 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
     def on_test_notification(icon, item):
         send_notification("Test Notification", "Match finder is working!")
         play_alert_sound()
+        
+    def on_phone_alert_setup(icon, item):
+        import subprocess
+        # Open the config file in notepad
+        try:
+            subprocess.Popen(['notepad.exe', str(CONFIG_FILE)])
+        except Exception as e:
+            logging.error(f"Could not open config file: {e}")
+            
+    def on_test_phone_alert(icon, item):
+        send_ntfy_alert("Test Alert", "Phone notification is working!")
 
     def on_quit(icon, item):
         state.running = False
@@ -999,7 +1074,9 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
                 enabled=False,
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Test notification", on_test_notification),
+            pystray.MenuItem("Test Notification (Desktop)", on_test_notification),
+            pystray.MenuItem("Test Phone Alert", on_test_phone_alert),
+            pystray.MenuItem("Phone Alert Setup (ntfy.sh)...", on_phone_alert_setup),
             pystray.MenuItem("Quit", on_quit),
         ),
     )
