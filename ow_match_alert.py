@@ -929,6 +929,11 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         title=f"{APP_NAME} v{VERSION}",
         menu=pystray.Menu(
             pystray.MenuItem(
+                f"Version: {VERSION}",
+                None,
+                enabled=False,
+            ),
+            pystray.MenuItem(
                 lambda text: f"Status: {state.status_text[:50]}",
                 None,
                 enabled=False,
