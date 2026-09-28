@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.2.0-dev.5"
+VERSION = "1.2.0-dev.6"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -545,11 +545,14 @@ class MatchDetector:
         load_from_dir(templates_dir)
         
         # Load custom templates if enabled
-        if config.getboolean('CustomTemplates', 'enabled', fallback=False):
+        custom_enabled = config.getboolean('CustomTemplates', 'enabled', fallback=False)
+        if custom_enabled:
             custom_dir_str = config.get('CustomTemplates', 'directory', fallback='custom_templates')
             custom_dir = Path(custom_dir_str)
             if not custom_dir.is_absolute():
                 custom_dir = SCRIPT_DIR / custom_dir
+            
+            logging.info(f"Custom templates enabled. Searching in: {custom_dir}")
             
             if not custom_dir.exists():
                 try:
@@ -560,8 +563,10 @@ class MatchDetector:
             
             if custom_dir.exists():
                 load_from_dir(custom_dir)
+        else:
+            logging.info("Custom templates disabled in config.ini")
 
-        logging.info(f"Loaded {len(self.raw_templates)} masked templates")
+        logging.info(f"Loaded a total of {len(self.raw_templates)} masked templates")
         
         self._cached_w = 0
         self._cached_h = 0
