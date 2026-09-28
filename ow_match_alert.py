@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.2.0-dev.1"
+VERSION = "1.2.0-dev.2"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -74,8 +74,10 @@ TEMPLATES_DIR = SCRIPT_DIR / "masked_screenshots"
 DEBUG_DIR = APP_DATA_DIR / "debug_screenshots"
 CONFIG_FILE = APP_DATA_DIR / "config.ini"
 
-def generate_default_config():
-    return f"""[PhoneAlerts]
+def generate_default_config(include_phone=True, include_settings=True, include_templates=True):
+    content = ""
+    if include_phone:
+        content += f"""[PhoneAlerts]
 # Set enabled to true to receive phone notifications
 enabled = false
 
@@ -83,7 +85,27 @@ enabled = false
 # On your phone, install the 'ntfy' app (Android/iOS) or go to ntfy.sh
 # and subscribe to this exact topic string:
 ntfy_topic = ow_alert_{uuid.uuid4().hex[:8]}
+
 """
+    if include_settings:
+        content += """[Settings]
+# Automatically switch focus (Alt-Tab) to Overwatch when a match is found
+auto_focus = true
+
+# Enable debug mode to save screenshots and verbose logs to the logs folder
+debug_mode = false
+
+"""
+    if include_templates:
+        content += """[CustomTemplates]
+# Enable loading custom template .png images from an external folder
+enabled = false
+
+# Path to the folder containing custom .png templates
+# This can be an absolute path (e.g. C:\\MyFolder) or relative to the .exe
+directory = custom_templates
+"""
+    return content
 
 config = configparser.ConfigParser()
 if not CONFIG_FILE.exists():
@@ -93,10 +115,24 @@ if not CONFIG_FILE.exists():
 
 config.read(CONFIG_FILE)
 
-# Ensure PhoneAlerts section exists in older configs
-if 'PhoneAlerts' not in config:
+# Ensure sections exist for older configs
+missing_phone = 'PhoneAlerts' not in config
+missing_settings = 'Settings' not in config
+missing_templates = 'CustomTemplates' not in config
+
+if missing_phone or missing_settings or missing_templates:
+    # Ensure file ends with newline before appending
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            content = f.read()
+            if content and not content.endswith('\n'):
+                with open(CONFIG_FILE, 'a') as fa:
+                    fa.write('\n\n')
+    except Exception:
+        pass
+        
     with open(CONFIG_FILE, 'a') as f:
-        f.write("\n" + generate_default_config())
+        f.write(generate_default_config(missing_phone, missing_settings, missing_templates))
     config.read(CONFIG_FILE)
 
 # Overwatch 2 window title (exact match)
@@ -492,14 +528,38 @@ class MatchDetector:
         self.templates_dir = templates_dir
         self.raw_templates = {}
         
-        if templates_dir.exists():
-            for template_path in templates_dir.glob("*.png"):
-                img = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
-                if img is not None:
-                    self.raw_templates[template_path.stem] = img
-                    logging.debug(f"Loaded masked template: {template_path.stem}")
-        else:
-            logging.warning(f"Templates directory not found: {templates_dir}")
+        # Helper to load from a directory
+        def load_from_dir(dir_path: Path):
+            if dir_path.exists():
+                for template_path in dir_path.glob("*.png"):
+                    if template_path.stem in self.raw_templates:
+                        continue # Don't overwrite existing templates
+                    img = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
+                    if img is not None:
+                        self.raw_templates[template_path.stem] = img
+                        logging.debug(f"Loaded masked template: {template_path.stem} from {dir_path.name}")
+            elif dir_path == templates_dir:
+                logging.warning(f"Default templates directory not found: {templates_dir}")
+
+        # Load built-in templates
+        load_from_dir(templates_dir)
+        
+        # Load custom templates if enabled
+        if config.getboolean('CustomTemplates', 'enabled', fallback=False):
+            custom_dir_str = config.get('CustomTemplates', 'directory', fallback='custom_templates')
+            custom_dir = Path(custom_dir_str)
+            if not custom_dir.is_absolute():
+                custom_dir = SCRIPT_DIR / custom_dir
+            
+            if not custom_dir.exists():
+                try:
+                    custom_dir.mkdir(parents=True, exist_ok=True)
+                    logging.info(f"Created custom templates directory: {custom_dir}")
+                except Exception as e:
+                    logging.error(f"Failed to create custom templates directory: {e}")
+            
+            if custom_dir.exists():
+                load_from_dir(custom_dir)
 
         logging.info(f"Loaded {len(self.raw_templates)} masked templates")
         
@@ -704,11 +764,11 @@ class AppState:
     """Shared application state."""
     running: bool = True
     scanning: bool = True
-    auto_focus: bool = False
+    auto_focus: bool = config.getboolean('Settings', 'auto_focus', fallback=True)
     last_state: GameState = GameState.UNKNOWN
     scan_count: int = 0
     match_found_count: int = 0
-    debug_mode: bool = False
+    debug_mode: bool = config.getboolean('Settings', 'debug_mode', fallback=False)
     status_text: str = "Starting..."
     # Automated arming state
     auto_dormant: bool = False
@@ -983,6 +1043,47 @@ def scanner_loop(state: AppState, detector: MatchDetector,
 # System tray
 # ---------------------------------------------------------------------------
 
+def update_config_boolean(section: str, key: str, new_state: bool):
+    """Update a boolean config value in the file without stripping comments."""
+    try:
+        import re
+        with open(CONFIG_FILE, 'r') as f:
+            content = f.read()
+            
+        # Try to find the specific key under the specific section.
+        # This regex is a bit complex but ensures we only match the key in the right section.
+        # A simpler approach is to just replace the first occurrence of the key, but
+        # 'enabled' might appear in multiple sections. So we'll replace the key globally
+        # if it's unique, or we can use a more targeted regex.
+        
+        # We can regex specifically for the section then the key:
+        # Pattern: `(\[Section\][\s\S]*?\nkey\s*=\s*)(true|false)`
+        # But this is complex. Instead, let's use a simpler targeted regex if the key is unique,
+        # or rewrite the file line by line tracking sections.
+        
+        lines = content.splitlines()
+        in_section = False
+        for i, line in enumerate(lines):
+            if line.strip() == f"[{section}]":
+                in_section = True
+                continue
+            elif line.strip().startswith("[") and line.strip().endswith("]"):
+                in_section = False
+                continue
+                
+            if in_section:
+                match = re.match(rf'^({key}\s*=\s*)(true|false)(.*)$', line, re.IGNORECASE)
+                if match:
+                    lines[i] = f"{match.group(1)}{str(new_state).lower()}{match.group(3)}"
+                    break
+                    
+        with open(CONFIG_FILE, 'w') as f:
+            f.write('\n'.join(lines) + '\n')
+            
+        config.read(CONFIG_FILE)
+    except Exception as e:
+        logging.error(f"Failed to update config file text for {section}.{key}: {e}")
+
 def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
     """Create and run the system tray icon."""
     import pystray
@@ -1044,7 +1145,9 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
 
     def on_toggle_auto_focus(icon, item):
         state.auto_focus = not state.auto_focus
+        update_config_boolean('Settings', 'auto_focus', state.auto_focus)
         logging.info(f"Auto-focus {'enabled' if state.auto_focus else 'disabled'}")
+        state.set_icon_color()
 
     def on_test_notification(icon, item):
         send_notification("Test Notification", "Match finder is working!")
@@ -1065,17 +1168,7 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         config.read(CONFIG_FILE)
         current = config.getboolean('PhoneAlerts', 'enabled', fallback=False)
         new_state = not current
-        
-        try:
-            import re
-            with open(CONFIG_FILE, 'r') as f:
-                content = f.read()
-            content = re.sub(r'^(enabled\s*=\s*)(true|false)', rf'\g<1>{str(new_state).lower()}', content, flags=re.MULTILINE|re.IGNORECASE)
-            with open(CONFIG_FILE, 'w') as f:
-                f.write(content)
-            config.read(CONFIG_FILE)
-        except Exception as e:
-            logging.error(f"Failed to update config file text: {e}")
+        update_config_boolean('PhoneAlerts', 'enabled', new_state)
         
         # Log and force a UI redraw to update the checkmark immediately
         status = "enabled" if new_state else "disabled"
@@ -1104,6 +1197,7 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
 
     def on_toggle_debug(icon, item):
         state.debug_mode = not state.debug_mode
+        update_config_boolean('Settings', 'debug_mode', state.debug_mode)
         new_level = logging.DEBUG if state.debug_mode else logging.INFO
         logging.getLogger().setLevel(new_level)
         logging.info(f"Debug mode {'enabled' if state.debug_mode else 'disabled'} (Logging Level: {logging.getLevelName(new_level)})")
