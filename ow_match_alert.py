@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.2.0-dev.3"
+VERSION = "1.2.0-dev.4"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -717,14 +717,14 @@ def play_alert_sound():
     except Exception as e:
         logging.debug(f"Sound failed: {e}")
 
-def send_ntfy_alert(title: str, message: str):
+def send_ntfy_alert(title: str, message: str, force: bool = False):
     """Send a push notification via ntfy.sh if enabled in config."""
     try:
         # Reload config in case user edited it via the Setup menu
         config.read(CONFIG_FILE)
         
         enabled = config.getboolean('PhoneAlerts', 'enabled', fallback=False)
-        if not enabled:
+        if not enabled and not force:
             return
             
         topic = config.get('PhoneAlerts', 'ntfy_topic', fallback='')
@@ -1162,7 +1162,7 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
             logging.error(f"Could not open config file: {e}")
             
     def on_test_phone_alert(icon, item):
-        send_ntfy_alert("Test Alert", "Phone notification is working!")
+        send_ntfy_alert("Test Alert", "Phone notification is working!", force=True)
 
     def on_toggle_phone_alerts(icon, item):
         config.read(CONFIG_FILE)
