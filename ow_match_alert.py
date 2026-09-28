@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.2.0-dev.4"
+VERSION = "1.2.0-dev.5"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -1153,7 +1153,7 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         send_notification("Test Notification", "Match finder is working!")
         play_alert_sound()
         
-    def on_phone_alert_setup(icon, item):
+    def on_edit_config(icon, item):
         import subprocess
         # Open the config file in notepad
         try:
@@ -1275,7 +1275,7 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
                 on_copy_topic,
             ),
             pystray.MenuItem("Test Phone Alert", on_test_phone_alert),
-            pystray.MenuItem("Advanced Phone Setup...", on_phone_alert_setup),
+            pystray.MenuItem("Edit config...", on_edit_config),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", on_quit),
         ),
