@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.10"
+VERSION = "1.1.0-dev.11"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -170,6 +170,31 @@ def create_circle_icon(color: tuple, debug: bool = False) -> Image.Image:
 
 user32 = ctypes.windll.user32
 
+def get_window_title(hwnd: int) -> str:
+    """Safely get window title using timeouts to prevent hangs."""
+    if not hwnd:
+        return ""
+    SMTO_ABORTIFHUNG = 0x0002
+    WM_GETTEXTLENGTH = 0x000E
+    WM_GETTEXT = 0x000D
+    
+    # Configure argtypes for 64-bit compatibility
+    user32.SendMessageTimeoutW.argtypes = [
+        ctypes.wintypes.HWND, ctypes.wintypes.UINT, ctypes.wintypes.WPARAM, 
+        ctypes.wintypes.LPARAM, ctypes.wintypes.UINT, ctypes.wintypes.UINT, 
+        ctypes.POINTER(ctypes.c_size_t)
+    ]
+    user32.SendMessageTimeoutW.restype = ctypes.c_ssize_t
+
+    res_len = ctypes.c_size_t()
+    if user32.SendMessageTimeoutW(hwnd, WM_GETTEXTLENGTH, 0, 0, SMTO_ABORTIFHUNG, 50, ctypes.byref(res_len)):
+        length = res_len.value
+        if length > 0:
+            buf = ctypes.create_unicode_buffer(length + 1)
+            if user32.SendMessageTimeoutW(hwnd, WM_GETTEXT, length + 1, ctypes.cast(buf, ctypes.wintypes.LPARAM), SMTO_ABORTIFHUNG, 50, ctypes.byref(res_len)):
+                return buf.value
+    return ""
+
 def get_visible_windows() -> list[tuple[int, str]]:
     """Returns a list of (hwnd, title) for all visible top-level windows."""
     result = []
@@ -177,11 +202,8 @@ def get_visible_windows() -> list[tuple[int, str]]:
     @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
     def enum_callback(hwnd, lparam):
         if user32.IsWindowVisible(hwnd):
-            length = user32.GetWindowTextLengthW(hwnd)
-            if length > 0:
-                buf = ctypes.create_unicode_buffer(length + 1)
-                user32.GetWindowTextW(hwnd, buf, length + 1)
-                title = buf.value
+            title = get_window_title(hwnd)
+            if title:
                 result.append((hwnd, title))
         return True
 
@@ -731,16 +753,9 @@ def scanner_loop(state: AppState, detector: MatchDetector,
             if state.debug_mode and (time.time() - _last_focus_debug_time >= 5.0):
                 _last_focus_debug_time = time.time()
                 fg_hwnd = user32.GetForegroundWindow()
-                def _get_title(h):
-                    length = user32.GetWindowTextLengthW(h)
-                    if length > 0:
-                        buf = ctypes.create_unicode_buffer(length + 1)
-                        user32.GetWindowTextW(h, buf, length + 1)
-                        return buf.value
-                    return "(no title)"
                 try:
-                    ow_title = _get_title(hwnd) if hwnd else "N/A"
-                    fg_title = _get_title(fg_hwnd) if fg_hwnd else "N/A"
+                    ow_title = get_window_title(hwnd) if hwnd else "N/A"
+                    fg_title = get_window_title(fg_hwnd) if fg_hwnd else "N/A"
                 except Exception as e:
                     ow_title = "error"
                     fg_title = "error"
