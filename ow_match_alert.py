@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0"
+VERSION = "1.2.0-dev.1"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -315,8 +315,6 @@ class ScreenCapture:
             def on_closed():
                 with self._lock:
                     self._latest_frame = None
-                    self._capture_control = None
-                    self._hwnd = None
                 logging.info("WGC session closed by Windows.")
             
             return cap
@@ -325,23 +323,28 @@ class ScreenCapture:
             try:
                 # Try without the border first (Requires Windows 11 or newer Win 10 builds)
                 cap = _setup_cap(draw_border=False)
-                self._capture_control = cap.start_free_threaded()
+                # DO NOT hold lock during start_free_threaded!
+                ctrl = cap.start_free_threaded()
             except Exception as e:
                 if "border is not supported" in str(e).lower():
                     logging.info("Hiding capture border unsupported on this OS. Retrying with border enabled.")
                     cap = _setup_cap(draw_border=True)
-                    self._capture_control = cap.start_free_threaded()
+                    ctrl = cap.start_free_threaded()
                 else:
                     raise
             
-            self._hwnd = hwnd
-            self._backend = "wgc"
+            with self._lock:
+                self._capture_control = ctrl
+                self._hwnd = hwnd
+                self._backend = "wgc"
+                
             logging.info(f"Screen capture: Windows Graphics Capture initialized for HWND {hwnd}")
             return True
         except Exception as e:
             logging.warning(f"WGC init failed: {e}")
-            self._capture_control = None
-            self._hwnd = None
+            with self._lock:
+                self._capture_control = None
+                self._hwnd = None
             return False
 
     def grab(self, hwnd: int) -> Optional[np.ndarray]:
@@ -354,73 +357,109 @@ class ScreenCapture:
         Returns:
             BGR numpy array, or None on failure.
         """
+        ctrl_to_stop = None
+        need_start = False
+        
         with self._lock:
             # Check if we need to start or restart the capture session
             if self._capture_control is None or self._hwnd != hwnd:
-                if self._capture_control:
+                ctrl_to_stop = self._capture_control
+                self._capture_control = None
+                self._latest_frame = None
+                self._hwnd = None
+                need_start = True
+
+        if ctrl_to_stop is not None:
+            try:
+                # Stop old session outside the lock!
+                def _do_stop():
                     try:
-                        self._capture_control.stop()
+                        ctrl_to_stop.stop()
                     except:
                         pass
-                    self._capture_control = None
-                
-                # Start new stream
-                if not self._start_wgc(hwnd):
-                    # Fallback to MSS if WGC fails
-                    if HAS_MSS:
+                t = threading.Thread(target=_do_stop, daemon=True)
+                t.start()
+                t.join(timeout=1.0)
+            except:
+                pass
+            
+        if need_start:
+            # Start new stream outside the lock!
+            if not self._start_wgc(hwnd):
+                # Fallback to MSS if WGC fails
+                if HAS_MSS:
+                    with self._lock:
                         self._backend = "mss"
-                    else:
-                        return None
-            
-            # WGC Capture Path
-            if self._backend == "wgc":
-                if self._latest_frame is not None:
-                    img = self._latest_frame
-                    # WGC returns BGRA, convert to BGR
-                    if img.shape[2] == 4:
-                        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                    return img
-                return None
-            
-            # MSS Fallback Path (doesn't support minimized capture well)
-            if self._backend == "mss":
-                try:
-                    rect = get_window_rect(hwnd)
-                    if not rect:
-                        return None
-                    
-                    left, top, right, bottom = rect
-                    monitor = {
-                        "left": left,
-                        "top": top,
-                        "width": right - left,
-                        "height": bottom - top,
-                    }
-                    with mss.mss() as sct:
-                        screenshot = sct.grab(monitor)
-                        img = np.array(screenshot)
-                        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                        return img
-                except Exception as e:
-                    logging.debug(f"mss grab failed: {e}")
+                        self._hwnd = hwnd
+                else:
                     return None
+
+        # Determine backend and fetch frame securely under lock
+        with self._lock:
+            backend = self._backend
+            frame = self._latest_frame
+
+        # WGC Capture Path
+        if backend == "wgc":
+            if frame is not None:
+                img = frame
+                # WGC returns BGRA, convert to BGR (outside lock for speed)
+                if img.shape[2] == 4:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                return img
+            return None
+        
+        # MSS Fallback Path (doesn't support minimized capture well)
+        if backend == "mss":
+            try:
+                rect = get_window_rect(hwnd)
+                if not rect:
+                    return None
+                
+                left, top, right, bottom = rect
+                monitor = {
+                    "left": left,
+                    "top": top,
+                    "width": right - left,
+                    "height": bottom - top,
+                }
+                with mss.mss() as sct:
+                    screenshot = sct.grab(monitor)
+                    img = np.array(screenshot)
+                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                    return img
+            except Exception as e:
+                logging.debug(f"mss grab failed: {e}")
+                return None
 
         return None
 
     def release(self):
         """Release capture resources (used when going dormant)."""
+        ctrl = None
         with self._lock:
             if self._capture_control is not None:
-                try:
-                    self._capture_control.stop()
-                except Exception:
-                    pass
+                ctrl = self._capture_control
                 self._capture_control = None
             
             self._latest_frame = None
             self._hwnd = None
             self._backend = None
-            logging.info("Screen capture released")
+            
+        if ctrl is not None:
+            try:
+                def _do_stop():
+                    try:
+                        ctrl.stop()
+                    except:
+                        pass
+                t = threading.Thread(target=_do_stop, daemon=True)
+                t.start()
+                t.join(timeout=1.0)
+            except Exception:
+                pass
+                
+        logging.info("Screen capture released")
 
     def __del__(self):
         self.release()
