@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.1.0-dev.11"
+VERSION = "1.1.0-dev.12"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -191,7 +191,7 @@ def get_window_title(hwnd: int) -> str:
         length = res_len.value
         if length > 0:
             buf = ctypes.create_unicode_buffer(length + 1)
-            if user32.SendMessageTimeoutW(hwnd, WM_GETTEXT, length + 1, ctypes.cast(buf, ctypes.wintypes.LPARAM), SMTO_ABORTIFHUNG, 50, ctypes.byref(res_len)):
+            if user32.SendMessageTimeoutW(hwnd, WM_GETTEXT, length + 1, ctypes.addressof(buf), SMTO_ABORTIFHUNG, 50, ctypes.byref(res_len)):
                 return buf.value
     return ""
 
