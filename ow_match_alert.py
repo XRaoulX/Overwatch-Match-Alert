@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.2.0-dev.6"
+VERSION = "1.2.0-dev.7"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -65,9 +65,11 @@ import uuid
 if getattr(sys, 'frozen', False):
     # Running in a PyInstaller bundle
     SCRIPT_DIR = Path(sys._MEIPASS)
+    EXE_DIR = Path(sys.executable).parent
 else:
     # Running in a normal Python environment
     SCRIPT_DIR = Path(__file__).parent
+    EXE_DIR = SCRIPT_DIR
 
 APP_DATA_DIR = Path.home() / ".ow_notifier"
 TEMPLATES_DIR = SCRIPT_DIR / "masked_screenshots"
@@ -550,7 +552,7 @@ class MatchDetector:
             custom_dir_str = config.get('CustomTemplates', 'directory', fallback='custom_templates')
             custom_dir = Path(custom_dir_str)
             if not custom_dir.is_absolute():
-                custom_dir = SCRIPT_DIR / custom_dir
+                custom_dir = EXE_DIR / custom_dir
             
             logging.info(f"Custom templates enabled. Searching in: {custom_dir}")
             
