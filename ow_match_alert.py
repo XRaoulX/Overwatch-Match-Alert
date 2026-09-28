@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.2.0-dev.7"
+VERSION = "1.2.0-dev.8"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -531,7 +531,8 @@ class MatchDetector:
         self.raw_templates = {}
         
         # Helper to load from a directory
-        def load_from_dir(dir_path: Path):
+        def load_from_dir(dir_path: Path) -> int:
+            count = 0
             if dir_path.exists():
                 for template_path in dir_path.glob("*.png"):
                     if template_path.stem in self.raw_templates:
@@ -539,12 +540,15 @@ class MatchDetector:
                     img = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
                     if img is not None:
                         self.raw_templates[template_path.stem] = img
+                        count += 1
                         logging.debug(f"Loaded masked template: {template_path.stem} from {dir_path.name}")
             elif dir_path == templates_dir:
                 logging.warning(f"Default templates directory not found: {templates_dir}")
+            return count
 
         # Load built-in templates
-        load_from_dir(templates_dir)
+        internal_count = load_from_dir(templates_dir)
+        external_count = 0
         
         # Load custom templates if enabled
         custom_enabled = config.getboolean('CustomTemplates', 'enabled', fallback=False)
@@ -564,11 +568,11 @@ class MatchDetector:
                     logging.error(f"Failed to create custom templates directory: {e}")
             
             if custom_dir.exists():
-                load_from_dir(custom_dir)
+                external_count = load_from_dir(custom_dir)
         else:
             logging.info("Custom templates disabled in config.ini")
 
-        logging.info(f"Loaded a total of {len(self.raw_templates)} masked templates")
+        logging.info(f"Loaded a total of {len(self.raw_templates)} masked templates ({internal_count} internal, {external_count} external)")
         
         self._cached_w = 0
         self._cached_h = 0
