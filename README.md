@@ -1,4 +1,4 @@
-# Overwatch 2 Match Found Notifier (v1.1.0)
+# Overwatch 2 Match Found Notifier (v1.2.0)
 
 A lightweight, portable Windows system-tray application that silently watches your Overwatch 2 game in the background and sends you a desktop notification (and optionally Alt-Tabs you back in) the moment your queue pops and a match is found!
 
@@ -35,16 +35,22 @@ Right-click the app icon in your system tray to access controls:
   * 🟠 **Orange Icon:** Actively scanning for a match.
   * 🟢 **Green Icon:** Match found! (Scanner goes dormant to save resources).
   * 🔘 **Gray Icon:** Manually paused.
-* **Auto-focus game (Alt-Tab):** If checked, the app will automatically force Overwatch 2 to the front of your screen the exact second a match is found.
+* **Auto-focus game (Alt-Tab):** If checked, the app will automatically force Overwatch 2 to the front of your screen the exact second a match is found. *(Persistent setting)*
 * **Select Target Window:** Explicitly lock the scanner to a specific Overwatch window (the app uses exact title matching to find the game automatically by default).
 * **Phone Alerts (ntfy.sh):** Toggle push notifications to your phone on or off. You can easily copy your unique channel topic to your clipboard from the menu below it.
-* **🔴 DEBUG MODE ON:** Instantly turns on aggressive logging and saves the last 10 screenshots to your disk if you need to troubleshoot why a match wasn't detected.
+* **Edit config...:** Opens the `config.ini` file in Notepad to configure your phone alert topic, enable Custom Templates, or manually edit persistent settings.
+* **🔴 DEBUG MODE ON:** Instantly turns on aggressive logging and saves the last 10 screenshots to your disk if you need to troubleshoot why a match wasn't detected. *(Persistent setting)*
 
-### 3. Config & Logs
+### 3. Config, Logs & Custom Templates
 The app automatically creates a folder in your user directory: `C:\Users\<YourUser>\.ow_notifier\`
-* `config.ini` - Settings file for Phone Alerts.
+* `config.ini` - Settings file for Phone Alerts, Tray toggles, and Custom Templates.
 * `ow_notifier.log` - Rotating log file (capped at 5MB).
 * `debug_screenshots/` - (When debug is on) stores recent frames so you can see exactly what the scanner saw.
+
+**Custom Templates (New in v1.2.0)**
+You can now add your own match detection images without recompiling the executable! Open the `config.ini` (via *Edit config...*) and set `enabled = true` under `[CustomTemplates]`. Then, place your masked `.png` images in the `custom_templates` folder next to the `.exe`. 
+- Images with `searching` in the filename will be used to detect the queue timer.
+- All other images will trigger the "Match Found" alert!
 
 ## For Developers
 
