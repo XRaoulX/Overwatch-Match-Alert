@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.2.0"
+VERSION = "1.2.0-dev.10"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -93,6 +93,9 @@ ntfy_topic = ow_alert_{uuid.uuid4().hex[:8]}
         content += """[Settings]
 # Automatically switch focus (Alt-Tab) to Overwatch when a match is found
 auto_focus = true
+
+# Pause any playing media (Spotify, YouTube, etc.) before Auto-focusing
+pause_media = false
 
 # Enable debug mode to save screenshots and verbose logs to the logs folder
 debug_mode = false
@@ -764,6 +767,27 @@ def send_ntfy_alert(title: str, message: str, force: bool = False):
     except Exception as e:
         logging.error(f"Failed to process phone alert request: {e}")
 
+def pause_media_playback():
+    """Broadcasts a safe APPCOMMAND to pause any playing media."""
+    try:
+        HWND_BROADCAST = 0xFFFF
+        WM_APPCOMMAND = 0x0319
+        APPCOMMAND_MEDIA_PAUSE = 47
+        SMTO_ABORTIFHUNG = 0x0002
+        lParam = APPCOMMAND_MEDIA_PAUSE << 16
+        
+        ctypes.windll.user32.SendMessageTimeoutW(
+            HWND_BROADCAST, 
+            WM_APPCOMMAND, 
+            0, 
+            lParam, 
+            SMTO_ABORTIFHUNG, 
+            100,
+            None
+        )
+        logging.info("Sent media pause command")
+    except Exception as e:
+        logging.debug(f"Failed to pause media: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -776,6 +800,7 @@ class AppState:
     running: bool = True
     scanning: bool = True
     auto_focus: bool = config.getboolean('Settings', 'auto_focus', fallback=True)
+    pause_media: bool = config.getboolean('Settings', 'pause_media', fallback=False)
     last_state: GameState = GameState.UNKNOWN
     scan_count: int = 0
     match_found_count: int = 0
@@ -993,6 +1018,8 @@ def scanner_loop(state: AppState, detector: MatchDetector,
 
                     # Auto-focus if enabled
                     if state.auto_focus:
+                        if state.pause_media:
+                            pause_media_playback()
                         logging.info("Auto-focusing Overwatch window")
                         bring_window_to_front(hwnd)
 
@@ -1020,6 +1047,8 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                     play_alert_sound()
 
                     if state.auto_focus:
+                        if state.pause_media:
+                            pause_media_playback()
                         bring_window_to_front(hwnd)
 
                     # Trigger automated dormancy
@@ -1074,20 +1103,30 @@ def update_config_boolean(section: str, key: str, new_state: bool):
         
         lines = content.splitlines()
         in_section = False
+        key_found = False
+        section_end_idx = len(lines)
+        
         for i, line in enumerate(lines):
             if line.strip() == f"[{section}]":
                 in_section = True
                 continue
             elif line.strip().startswith("[") and line.strip().endswith("]"):
-                in_section = False
+                if in_section:
+                    section_end_idx = i
+                    in_section = False
                 continue
                 
             if in_section:
                 match = re.match(rf'^({key}\s*=\s*)(true|false)(.*)$', line, re.IGNORECASE)
                 if match:
                     lines[i] = f"{match.group(1)}{str(new_state).lower()}{match.group(3)}"
+                    key_found = True
                     break
-                    
+        
+        # If the key was completely missing from the section, append it to the end of that section
+        if not key_found:
+            lines.insert(section_end_idx, f"{key} = {str(new_state).lower()}")
+            
         with open(CONFIG_FILE, 'w') as f:
             f.write('\n'.join(lines) + '\n')
             
@@ -1159,6 +1198,11 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         update_config_boolean('Settings', 'auto_focus', state.auto_focus)
         logging.info(f"Auto-focus {'enabled' if state.auto_focus else 'disabled'}")
         state.set_icon_color()
+
+    def on_toggle_pause_media(icon, item):
+        state.pause_media = not state.pause_media
+        update_config_boolean('Settings', 'pause_media', state.pause_media)
+        logging.info(f"Pause Media {'enabled' if state.pause_media else 'disabled'}")
 
     def on_test_notification(icon, item):
         send_notification("Test Notification", "Match finder is working!")
@@ -1246,6 +1290,12 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
                 "Auto-focus game (Alt-Tab)",
                 on_toggle_auto_focus,
                 checked=auto_focus_checked,
+            ),
+            pystray.MenuItem(
+                "  └─ Pause Media when auto-focusing",
+                on_toggle_pause_media,
+                checked=lambda item: state.pause_media,
+                enabled=lambda item: state.auto_focus,
             ),
             pystray.MenuItem(
                 lambda text: "🔴 DEBUG MODE ON (Saving Images)" if state.debug_mode else "Debug Mode (Save Logs/Images)",
