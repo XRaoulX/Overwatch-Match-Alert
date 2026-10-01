@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.3.0-dev.4"
+VERSION = "1.3.0-dev.5"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -754,7 +754,7 @@ def send_ntfy_alert(title: str, message: str, force: bool = False):
                 req.add_header('Title', title.encode('utf-8'))
                 req.add_header('Tags', 'video_game,loudspeaker')
                 req.add_header('Priority', 'urgent')
-                req.add_header('Icon', 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Overwatch_circle_logo.svg/512px-Overwatch_circle_logo.svg.png')
+                req.add_header('Icon', 'https://raw.githubusercontent.com/XRaoulX/Overwatch-Match-Alert/main/icon.png')
                 
                 with urllib.request.urlopen(req, timeout=5) as response:
                     if response.status == 200:
