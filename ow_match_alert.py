@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.3.0-dev.2"
+VERSION = "1.3.0-dev.3"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -1404,7 +1404,7 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
                 on_copy_topic,
             ),
             pystray.MenuItem("Test Phone Alert", on_test_phone_alert),
-            pystray.MenuItem("  └─ Generate Android Backup...", on_generate_android_backup),
+            pystray.MenuItem("Generate Android Backup...", on_generate_android_backup),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open App Data Folder...", on_open_app_data),
             pystray.Menu.SEPARATOR,
