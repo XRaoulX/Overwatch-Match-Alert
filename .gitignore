@@ -26,3 +26,6 @@ logs/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# User specific / local configs
+mobile_config/
