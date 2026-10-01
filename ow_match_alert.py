@@ -52,7 +52,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 APP_NAME = "Overwatch Match Alert"
-VERSION = "1.3.0-dev.1"
+VERSION = "1.3.0-dev.2"
 
 # ---------------------------------------------------------------------------
 # Constants & Config
@@ -766,6 +766,64 @@ def send_ntfy_alert(title: str, message: str, force: bool = False):
         threading.Thread(target=_post, daemon=True).start()
     except Exception as e:
         logging.error(f"Failed to process phone alert request: {e}")
+def generate_ntfy_backup(force=False):
+    """Generate an Android ntfy backup JSON with the current topic."""
+    backup_file = APP_DATA_DIR / "ntfy_android_backup.json"
+    if backup_file.exists() and not force:
+        return
+
+    topic = config.get('PhoneAlerts', 'ntfy_topic', fallback="").strip()
+    if not topic:
+        logging.warning("No ntfy_topic found to generate backup.")
+        return
+
+    import json
+    import random
+    
+    backup_data = {
+        "clientCertificates": [],
+        "magic": "ntfy2586",
+        "notifications": [],
+        "settings": {
+            "autoDeleteSeconds": 2592000,
+            "autoDownloadMaxSize": 1048576,
+            "broadcastEnabled": True,
+            "connectionAlertSeconds": 0,
+            "connectionProtocol": "jsonhttp",
+            "darkMode": -1,
+            "defaultBaseUrl": "",
+            "dynamicColors": False,
+            "lastSharedTopics": [],
+            "minPriority": 1,
+            "mutedUntil": 0,
+            "recordLogs": False
+        },
+        "subscriptions": [
+            {
+                "autoDelete": 86400,
+                "baseUrl": "https://ntfy.sh",
+                "dedicatedChannels": True,
+                "displayName": "Overwatch Match Alert",
+                "icon": "",
+                "id": random.randint(10000000, 99999999),
+                "insistent": 1,
+                "instant": True,
+                "lastNotificationId": "",
+                "minPriority": 0,
+                "mutedUntil": 0,
+                "topic": topic
+            }
+        ],
+        "trustedCertificates": [],
+        "version": 1
+    }
+    
+    try:
+        with open(backup_file, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, indent=2)
+        logging.info(f"Generated ntfy Android backup at {backup_file}")
+    except Exception as e:
+        logging.error(f"Failed to write ntfy backup: {e}")
 
 def pause_media_playback():
     """Broadcasts a safe APPCOMMAND to pause any playing media."""
@@ -1208,13 +1266,13 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         send_notification("Test Notification", "Match finder is working!")
         play_alert_sound()
         
-    def on_edit_config(icon, item):
+    def on_open_app_data(icon, item):
         import subprocess
-        # Open the config file in notepad
+        # Open the APP_DATA_DIR in explorer
         try:
-            subprocess.Popen(['notepad.exe', str(CONFIG_FILE)])
+            subprocess.Popen(['explorer.exe', str(APP_DATA_DIR)])
         except Exception as e:
-            logging.error(f"Could not open config file: {e}")
+            logging.error(f"Could not open App Data directory: {e}")
             
     def on_test_phone_alert(icon, item):
         send_ntfy_alert("Test Alert", "Phone notification is working!", force=True)
@@ -1225,6 +1283,9 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
         new_state = not current
         update_config_boolean('PhoneAlerts', 'enabled', new_state)
         
+        if new_state:
+            generate_ntfy_backup(force=False)
+            
         # Log and force a UI redraw to update the checkmark immediately
         status = "enabled" if new_state else "disabled"
         logging.info(f"Phone alerts {status}")
@@ -1239,6 +1300,13 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
             import subprocess
             subprocess.run(['clip.exe'], input=topic.encode('utf-16le'), check=False)
             send_notification("Copied to Clipboard", f"ntfy Topic: {topic}", str(SCRIPT_DIR / "icon.png"))
+
+    def on_generate_android_backup(icon, item):
+        generate_ntfy_backup(force=True)
+        backup_file = APP_DATA_DIR / "ntfy_android_backup.json"
+        if backup_file.exists():
+            import subprocess
+            subprocess.Popen(f'explorer /select,"{backup_file}"')
 
     def on_quit(icon, item):
         state.running = False
@@ -1336,7 +1404,9 @@ def create_tray_icon(state: AppState, screen_capture: ScreenCapture):
                 on_copy_topic,
             ),
             pystray.MenuItem("Test Phone Alert", on_test_phone_alert),
-            pystray.MenuItem("Edit config...", on_edit_config),
+            pystray.MenuItem("  └─ Generate Android Backup...", on_generate_android_backup),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Open App Data Folder...", on_open_app_data),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", on_quit),
         ),
