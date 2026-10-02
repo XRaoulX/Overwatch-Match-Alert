@@ -1,4 +1,4 @@
-# Overwatch Match Found Notifier (v1.3.0)
+# Overwatch Match Found Notifier (v1.3.1)
 
 A lightweight, portable Windows system-tray application that silently watches your Overwatch game in the background and sends you a desktop notification (and optionally Alt-Tabs you back in) the moment your queue pops and a match is found!
 
