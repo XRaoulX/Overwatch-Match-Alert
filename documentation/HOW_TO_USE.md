@@ -185,9 +185,59 @@ However, if Blizzard updates their UI or you want to support specific custom lob
 - **Queue Search Templates:** Any file containing the word `searching` in its filename (e.g., `searching_custom.png`) is treated as a "Searching for Match" indicator.
 - **Match Found Templates:** Any other file name (e.g., `my_custom_match.png`, `comp_found.png`) will immediately trigger the **Match Found!** alert when detected.
 
-### Image Masking Rules:
-- Images must be `.png` format.
-- Pure black pixels (`RGB [0, 0, 0]`) are automatically treated as transparent masks. This allows matching shapes or text while ignoring animated background videos or shifting map lighting.
+### Image Masking Rules & Creation Guide
+
+#### Why Masking is Necessary
+In Overwatch 2, UI elements like the "GAME FOUND!" banner or queue timers appear over 3D animated menus, character models, particles, and dynamic lighting. A standard image comparison would fail 99% of the time because the background is constantly changing. 
+
+With **Masked Template Matching**, the scanner automatically treats pure black (`RGB [0, 0, 0]`) as **completely transparent**, ignoring the animated background entirely and only matching the solid UI graphics, borders, and text.
+
+---
+
+#### Step-by-Step: Creating a Custom Masked Template
+
+1. **Capture a Full-Window Screenshot:**
+   - While in-game, capture a full screenshot of the screen/banner you want to detect (you can also enable **🐛 DEBUG MODE ON** in the tray to grab recent frames directly from `debug_screenshots/`).
+   - **Important:** Keep the screenshot at your native game resolution (e.g., 1920×1080 or 2560×1440).
+
+2. **DO NOT Crop the Canvas (Maintain Screen Position!):**
+   - **Crucial Rule:** The image must remain a full-resolution canvas with the UI element staying in its **exact original screen coordinates**.
+   - *Why?* The scanner automatically locates the non-black pixels (`cv2.boundingRect`) and restricts its search region (`ROI`) to that specific portion of the screen (plus a 10px margin). This keeps scanning instant (<1 millisecond) and prevents false positives elsewhere on your display.
+
+3. **Mask the Background with Pure Black:**
+   - Open your screenshot in any image editor (Photoshop, GIMP, Paint.NET, Photopea, etc.).
+   - Use selection tools (Lasso, Magic Wand, or Rectangular Marquee) to isolate the target UI element.
+   - Invert your selection (select everything else) and fill it with solid pure black: **Hex `#000000`** / **RGB `(0, 0, 0)`**.
+   - Ensure the background is truly black (`RGB 0,0,0`) and has no anti-aliased gray shadows blending into the black void.
+
+4. **Save as PNG:**
+   - Export the file as a standard `.png` image.
+
+---
+
+#### Real Example: `unranked_game_found_1.png`
+
+Here is how one of our built-in detection templates is structured:
+
+**1. Full Canvas Overview (2560 × 1440 Canvas):**  
+Notice how the entire canvas is completely painted pure black (`#000000`), preserving only the green-highlighted banner in its exact top-center position:
+
+<img src="./example_masked_template_overview.png" width="600" alt="Full Canvas Masked Overview" />
+
+**2. Zoomed-In Active UI Area:**  
+Up close, the blue banner frame, green checkmark icon, and `"GAME FOUND!"` typography are fully preserved, while the surrounding background is filled with pure black:
+
+<img src="./example_masked_banner.png" width="500" alt="Zoomed Masked Banner Area" />
+
+---
+
+### Verifying Loaded Templates in Logs
+When you start the application, you can check `ow_notifier.log` (accessible via **Open App Data Folder...**) to confirm your custom templates are detected and loaded:
+```text
+[INFO] Custom templates enabled. Searching in: D:\Workspace\Overwatch\custom_templates
+[INFO] Loaded masked template: my_custom_banner from custom_templates
+[INFO] Loaded a total of 21 masked templates (20 internal, 1 external)
+```
 
 ---
 
