@@ -19,7 +19,7 @@ Welcome to the official **Overwatch Match Alert** documentation! This guide cove
 
 ## 1. Overview & Architecture
 
-**Overwatch Match Alert** is a lightweight, zero-install Windows application designed to monitor your Overwatch 2 queue in the background. Whether you're browsing the web, watching videos, working, or away from your desk getting a drink, the app alerts you immediately when your queue pops.
+**Overwatch Match Alert** is a lightweight, zero-install Windows application designed to monitor your Overwatch queue in the background. Whether you're browsing the web, watching videos, working, or away from your desk getting a drink, the app alerts you immediately when your queue pops.
 
 ### Key Highlights
 - **100% Anti-Cheat Safe:** The application does **not** hook into game memory, inject DLLs, or interact with game processes.
@@ -32,16 +32,16 @@ Welcome to the official **Overwatch Match Alert** documentation! This guide cove
 ## 2. Critical Display Requirement (Must Read!)
 
 > [!CAUTION]
-> **DO NOT minimize Overwatch 2 to the Windows Taskbar!**
+> **DO NOT minimize Overwatch to the Windows Taskbar!**
 
 ### Why?
 Windows Desktop Window Manager (DWM) automatically freezes rendering for hardware-accelerated DirectX games the moment they are minimized to the taskbar. When minimized, the game engine stops drawing new frames, meaning our screen scanner will only see a frozen, outdated image.
 
 ### Correct Background Queuing Workflow:
-1. Open Overwatch 2 and navigate to **Options → Video → Display Mode**.
+1. Open Overwatch and navigate to **Options → Video → Display Mode**.
 2. Set Display Mode to **Borderless Windowed** (recommended) or **Windowed**.
 3. When you start searching for a match, simply **Alt-Tab**, click on your web browser, or open any other program over the game.
-4. As long as the Overwatch 2 window is *open in the background* (not minimized to the taskbar icon), the scanner captures and detects matches with 100% accuracy.
+4. As long as the Overwatch window is *open in the background* (not minimized to the taskbar icon), the scanner captures and detects matches with 100% accuracy.
 
 ---
 
@@ -63,13 +63,13 @@ Right-click the tray icon to access the full menu.
 ### System Tray Status Icons
 | Icon | Status | Meaning |
 | :---: | :--- | :--- |
-| 🟠 | **Scanning** | Actively scanning Overwatch 2 in the background for a match. |
+| 🟠 | **Scanning** | Actively scanning Overwatch in the background for a match. |
 | 🟢 | **Match Found!** | Match detected! Alerts triggered and scanner is paused to save CPU/GPU. |
 | ⚪ | **Paused** | Scanning is manually turned off. |
 
 ### Tray Menu Breakdown
 - **Scanning (Checkbox):** Click to toggle the scanner on or off manually.
-- **Auto-focus game (Alt-Tab) (Checkbox):** Automatically brings Overwatch 2 to the front when a match pops.
+- **Auto-focus game (Alt-Tab) (Checkbox):** Automatically brings Overwatch to the front when a match pops.
   - **Pause Media when auto-focusing (Checkbox):** Sub-toggle that pauses background music/video before alt-tabbing.
 - **Select Target Window:** Lets you manually select which Overwatch window handle to capture if multiple instances exist.
 - **Matches found / Scans:** Live statistics counter for the current session.
@@ -87,7 +87,7 @@ Right-click the tray icon to access the full menu.
 ## 5. Auto-Focus & Media Auto-Pause
 
 ### Auto-Focus Game (Alt-Tab)
-When enabled, the app uses native Windows user32 APIs (`SetForegroundWindow`, `ShowWindow`) with input thread attachment to bring Overwatch 2 to the absolute front of your screen the split second a match is found.
+When enabled, the app uses native Windows user32 APIs (`SetForegroundWindow`, `ShowWindow`) with input thread attachment to bring Overwatch to the absolute front of your screen the split second a match is found.
 
 ### Media Playback Auto-Pause
 If you are watching YouTube, listening to Spotify, or streaming media while waiting in a long queue, you don't want audio blasting over your team's voice chat when you get pulled into the game.
@@ -188,7 +188,7 @@ However, if Blizzard updates their UI or you want to support specific custom lob
 ### Image Masking Rules & Creation Guide
 
 #### Why Masking is Necessary
-In Overwatch 2, UI elements like the "GAME FOUND!" banner or queue timers appear over 3D animated menus, character models, particles, and dynamic lighting. A standard image comparison would fail 99% of the time because the background is constantly changing. 
+In Overwatch, UI elements like the "GAME FOUND!" banner or queue timers appear over 3D animated menus, character models, particles, and dynamic lighting. A standard image comparison would fail 99% of the time because the background is constantly changing. 
 
 With **Masked Template Matching**, the scanner automatically treats pure black (`RGB [0, 0, 0]`) as **completely transparent**, ignoring the animated background entirely and only matching the solid UI graphics, borders, and text.
 
@@ -251,7 +251,7 @@ You can quickly access this folder at any time by clicking **Open App Data Folde
 ### Example `config.ini` Reference
 ```ini
 [Settings]
-# Automatically brings Overwatch 2 to the foreground when a match is found
+# Automatically brings Overwatch to the foreground when a match is found
 auto_focus = true
 
 # Pauses playing media (Spotify, YouTube, etc.) right before focusing the game
@@ -279,9 +279,9 @@ directory = custom_templates
 ## 9. Troubleshooting & Debug Mode
 
 ### Issue: "The tray icon stays gray or doesn't find the game"
-- Ensure Overwatch 2 is running and actively visible on your screen or in the background.
+- Ensure Overwatch is running and actively visible on your screen or in the background.
 - Check the tray menu item **Select Target Window** to ensure it is targeting the `Overwatch` window.
-- Make sure Overwatch 2 is in **Borderless Windowed** mode, **not** minimized to the taskbar.
+- Make sure Overwatch is in **Borderless Windowed** mode, **not** minimized to the taskbar.
 
 ### Issue: "Phone alerts aren't arriving or are delayed"
 - Click **Test Phone Alert** in the tray menu to test connectivity.

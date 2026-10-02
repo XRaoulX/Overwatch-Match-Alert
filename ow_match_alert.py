@@ -1,7 +1,7 @@
 """
-Overwatch 2 Match Found Notifier
-================================
-Lightweight system-tray app that detects when a match is found in Overwatch 2
+Overwatch Match Found Notifier
+==============================
+Lightweight system-tray app that detects when a match is found in Overwatch
 and sends a Windows toast notification + optionally Alt-Tabs into the game.
 
 Detection method:
@@ -140,7 +140,7 @@ if missing_phone or missing_settings or missing_templates:
         f.write(generate_default_config(missing_phone, missing_settings, missing_templates))
     config.read(CONFIG_FILE)
 
-# Overwatch 2 window title (exact match)
+# Overwatch window title (exact match)
 OW_WINDOW_TITLE = "Overwatch"
 
 # Detection intervals
@@ -527,7 +527,7 @@ class DetectionResult:
 
 
 class MatchDetector:
-    """Detects Overwatch 2 match state from screen captures using masked templates."""
+    """Detects Overwatch match state from screen captures using masked templates."""
 
     def __init__(self, templates_dir: Path = TEMPLATES_DIR):
         self.templates_dir = templates_dir
@@ -1430,7 +1430,7 @@ def console_loop(state: AppState, detector: MatchDetector,
     scanner_thread.start()
 
     print("\n" + "=" * 60)
-    print("  Overwatch 2 Match Notifier - Console Mode")
+    print("  Overwatch Match Notifier - Console Mode")
     print(f"  Capture: {screen_capture.backend_name}")
     print("=" * 60)
     print("\nCommands:")
