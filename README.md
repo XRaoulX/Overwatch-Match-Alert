@@ -2,6 +2,8 @@
 
 A lightweight, portable Windows system-tray application that silently watches your Overwatch 2 game in the background and sends you a desktop notification (and optionally Alt-Tabs you back in) the moment your queue pops and a match is found!
 
+> 📖 **Full User Guide & Wiki:** Check out the complete [User Guide & Wiki](./documentation/README.md) for detailed step-by-step setup guides (including phone push notification walkthroughs with screenshots), custom template guides, and troubleshooting tips!
+
 ## How It Works
 
 The app utilizes the **Windows Graphics Capture (WGC)** API to capture frames from the Overwatch 2 game window in real-time, even when the game is completely obscured behind other windows (like a web browser or Discord). 
