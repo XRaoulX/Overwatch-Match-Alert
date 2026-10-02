@@ -827,26 +827,56 @@ def generate_ntfy_backup(force=False):
         logging.error(f"Failed to write ntfy backup: {e}")
 
 def pause_media_playback():
-    """Broadcasts a safe APPCOMMAND to pause any playing media."""
+    """Pauses media explicitly using SMTC, avoiding play/pause toggles."""
     try:
-        HWND_BROADCAST = 0xFFFF
-        WM_APPCOMMAND = 0x0319
-        APPCOMMAND_MEDIA_PAUSE = 47
-        SMTO_ABORTIFHUNG = 0x0002
-        lParam = APPCOMMAND_MEDIA_PAUSE << 16
+        import asyncio
+        from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager
         
-        ctypes.windll.user32.SendMessageTimeoutW(
-            HWND_BROADCAST, 
-            WM_APPCOMMAND, 
-            0, 
-            lParam, 
-            SMTO_ABORTIFHUNG, 
-            100,
-            None
-        )
-        logging.info("Sent media pause command")
+        async def _pause():
+            try:
+                manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
+                session = manager.get_current_session()
+                if session:
+                    info = session.get_playback_info()
+                    if info and info.playback_status.name == "PLAYING":
+                        await session.try_pause_async()
+                        logging.info("Explicitly paused playing media via SMTC.")
+                    else:
+                        logging.debug(f"Media is not playing (Status: {info.playback_status.name if info else 'Unknown'}), skipping pause.")
+                else:
+                    logging.debug("No active media session found.")
+            except Exception as inner_e:
+                logging.debug(f"Error within async pause: {inner_e}")
+                
+        # Run the async function
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_pause())
+        except RuntimeError:
+            asyncio.run(_pause())
+    except ImportError:
+        logging.warning("winrt modules not found. Falling back to APPCOMMAND_MEDIA_PAUSE.")
+        try:
+            HWND_BROADCAST = 0xFFFF
+            WM_APPCOMMAND = 0x0319
+            APPCOMMAND_MEDIA_PAUSE = 47
+            SMTO_ABORTIFHUNG = 0x0002
+            lParam = APPCOMMAND_MEDIA_PAUSE << 16
+            
+            ctypes.windll.user32.SendMessageTimeoutW(
+                HWND_BROADCAST, 
+                WM_APPCOMMAND, 
+                0, 
+                lParam, 
+                SMTO_ABORTIFHUNG, 
+                100,
+                None
+            )
+            logging.info("Sent media pause command (fallback)")
+        except Exception as e:
+            logging.debug(f"Failed to pause media using fallback: {e}")
     except Exception as e:
-        logging.debug(f"Failed to pause media: {e}")
+        logging.debug(f"Failed to setup media pause: {e}")
 
 
 # ---------------------------------------------------------------------------
