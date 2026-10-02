@@ -2,7 +2,7 @@
 
 A lightweight, portable Windows system-tray application that silently watches your Overwatch 2 game in the background and sends you a desktop notification (and optionally Alt-Tabs you back in) the moment your queue pops and a match is found!
 
-> 📖 **Full User Guide & Wiki:** Check out the complete [User Guide & Wiki](./documentation/README.md) for detailed step-by-step setup guides (including phone push notification walkthroughs with screenshots), custom template guides, and troubleshooting tips!
+> 📖 **Official GitHub Wiki:** Visit the [Overwatch Match Alert Wiki](https://github.com/XRaoulX/Overwatch-Match-Alert/wiki) for the full user guide, step-by-step mobile setup with screenshots, custom template masking tutorials, and troubleshooting tips!
 
 ## How It Works
 
