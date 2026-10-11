@@ -356,6 +356,8 @@ class ScreenCapture:
             def on_closed():
                 with self._lock:
                     self._latest_frame = None
+                    self._capture_control = None
+                    self._backend = None
                 logging.info("WGC session closed by Windows.")
             
             return cap
@@ -399,11 +401,12 @@ class ScreenCapture:
         
         with self._lock:
             # Check if we need to start or restart the capture session
-            if self._capture_control is None or self._hwnd != hwnd:
+            if self._hwnd != hwnd or self._backend is None or (self._backend == "wgc" and self._capture_control is None):
                 ctrl_to_stop = self._capture_control
                 self._capture_control = None
                 self._latest_frame = None
                 self._hwnd = None
+                self._backend = None
                 need_start = True
 
         if ctrl_to_stop is not None:
@@ -735,13 +738,13 @@ def play_alert_sound():
         logging.debug(f"Sound failed: {e}")
 
 def mask_topic(topic: str) -> str:
-    """Mask a secret topic string for safe logging (e.g., 'ow_alert_12345678' -> 'ow_alert_***5678')."""
+    """Mask a secret topic string for safe logging (e.g., 'ow_alert_12345678' -> 'ow_a***678')."""
     if not topic:
         return "<empty>"
     clean = topic.strip()
-    if len(clean) <= 6:
-        return "***"
-    return f"{clean[:6]}***{clean[-4:]}"
+    if len(clean) <= 8:
+        return f"{clean[:2]}***{clean[-2:]}" if len(clean) >= 4 else "***"
+    return f"{clean[:4]}***{clean[-3:]}"
 
 def send_ntfy_alert(title: str, message: str, force: bool = False):
     """Send a push notification via ntfy.sh if enabled in config."""
@@ -1581,12 +1584,17 @@ class SanitizedFormatter(logging.Formatter):
     """Formatter that redacts personal identifiers (e.g. user home paths) from all log output."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._user_home = str(Path.home())
+        import re
+        user_home = str(Path.home())
+        self._patterns = []
+        if user_home:
+            self._patterns.append(re.compile(re.escape(user_home), re.IGNORECASE))
+            self._patterns.append(re.compile(re.escape(user_home.replace("\\", "/")), re.IGNORECASE))
 
     def format(self, record: logging.LogRecord) -> str:
         s = super().format(record)
-        if self._user_home and self._user_home in s:
-            s = s.replace(self._user_home, "%USERPROFILE%")
+        for pat in self._patterns:
+            s = pat.sub("%USERPROFILE%", s)
         return s
 
 
