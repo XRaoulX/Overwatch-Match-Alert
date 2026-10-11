@@ -364,15 +364,11 @@ class ScreenCapture:
             try:
                 # Try without the border first (Requires Windows 11 or newer Win 10 builds)
                 cap = _setup_cap(draw_border=False)
-                # DO NOT hold lock during start_free_threaded!
                 ctrl = cap.start_free_threaded()
-            except Exception as e:
-                if "border is not supported" in str(e).lower():
-                    logging.info("Hiding capture border unsupported on this OS. Retrying with border enabled.")
-                    cap = _setup_cap(draw_border=True)
-                    ctrl = cap.start_free_threaded()
-                else:
-                    raise
+            except Exception as e_border:
+                logging.info(f"Border-free capture failed ({e_border}). Retrying with border enabled for Windows 10 compatibility...")
+                cap = _setup_cap(draw_border=True)
+                ctrl = cap.start_free_threaded()
             
             with self._lock:
                 self._capture_control = ctrl
