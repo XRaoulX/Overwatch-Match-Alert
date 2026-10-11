@@ -738,6 +738,15 @@ def play_alert_sound():
     except Exception as e:
         logging.debug(f"Sound failed: {e}")
 
+def mask_topic(topic: str) -> str:
+    """Mask a secret topic string for safe logging (e.g., 'ow_alert_12345678' -> 'ow_alert_***5678')."""
+    if not topic:
+        return "<empty>"
+    clean = topic.strip()
+    if len(clean) <= 6:
+        return "***"
+    return f"{clean[:6]}***{clean[-4:]}"
+
 def send_ntfy_alert(title: str, message: str, force: bool = False):
     """Send a push notification via ntfy.sh if enabled in config."""
     try:
@@ -765,7 +774,7 @@ def send_ntfy_alert(title: str, message: str, force: bool = False):
                 
                 with urllib.request.urlopen(req, timeout=5) as response:
                     if response.status == 200:
-                        logging.info(f"Phone alert sent to ntfy.sh/{topic}")
+                        logging.info(f"Phone alert sent to ntfy.sh/{mask_topic(topic)}")
                     else:
                         logging.warning(f"Phone alert failed with status: {response.status}")
             except Exception as e:
@@ -986,7 +995,8 @@ def scanner_loop(state: AppState, detector: MatchDetector,
                 fg_hwnd = user32.GetForegroundWindow()
                 try:
                     ow_title = get_window_title(hwnd) if hwnd else "N/A"
-                    fg_title = get_window_title(fg_hwnd) if fg_hwnd else "N/A"
+                    # Privacy: Redact foreground window title if it is not the game
+                    fg_title = ow_title if is_foreground else "[External Window / App]"
                 except Exception as e:
                     ow_title = "error"
                     fg_title = "error"
@@ -1571,22 +1581,36 @@ def _get_windows_version() -> str:
         return "Windows (unknown version)"
 
 
+class SanitizedFormatter(logging.Formatter):
+    """Formatter that redacts personal identifiers (e.g. user home paths) from all log output."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._user_home = str(Path.home())
+
+    def format(self, record: logging.LogRecord) -> str:
+        s = super().format(record)
+        if self._user_home and self._user_home in s:
+            s = s.replace(self._user_home, "%USERPROFILE%")
+        return s
+
+
 def _setup_logging(debug: bool = False):
     """
     Configure the root logger with:
       - A concise console handler (HH:MM:SS [LEVEL] message)
       - A detailed rotating file handler (date+time+level+module, 3×5MB)
       - A session separator banner written to the log file on startup
+      - Automatic path sanitization to redact local username/home directory
     """
     log_level = logging.DEBUG if debug else logging.INFO
 
     # Concise format for the console window
-    console_formatter = logging.Formatter(
+    console_formatter = SanitizedFormatter(
         "%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S"
     )
     # Verbose format for the log file — includes date and source module
-    file_formatter = logging.Formatter(
+    file_formatter = SanitizedFormatter(
         "%(asctime)s [%(levelname)-8s] %(module)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
