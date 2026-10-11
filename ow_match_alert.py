@@ -382,7 +382,7 @@ class ScreenCapture:
             logging.info(f"Screen capture: Windows Graphics Capture initialized for HWND {hwnd}")
             return True
         except Exception as e:
-            logging.warning(f"WGC init failed: {e}")
+            logging.error(f"WGC init failed for HWND {hwnd}: {e}", exc_info=True)
             with self._lock:
                 self._capture_control = None
                 self._hwnd = None
@@ -429,10 +429,17 @@ class ScreenCapture:
             if not self._start_wgc(hwnd):
                 # Fallback to MSS if WGC fails
                 if HAS_MSS:
+                    logging.warning(
+                        "Falling back to MSS screen capture. "
+                        "NOTE: MSS captures the screen region by coordinates, NOT the window directly. "
+                        "Overwatch must remain visible (not minimised or covered) for detection to work. "
+                        "Update Windows to enable the WGC backend."
+                    )
                     with self._lock:
                         self._backend = "mss"
                         self._hwnd = hwnd
                 else:
+                    logging.error("No capture backend available (WGC and MSS both failed). Detection is disabled.")
                     return None
 
         # Determine backend and fetch frame securely under lock
@@ -1547,35 +1554,89 @@ def console_loop(state: AppState, detector: MatchDetector,
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _get_windows_version() -> str:
+    """Return a human-readable Windows version string (e.g. 'Windows 11 Build 22631')."""
+    try:
+        ver = sys.getwindowsversion()
+        build = ver.build
+        # Windows 11 is build 22000+
+        if ver.major == 10 and build >= 22000:
+            name = "Windows 11"
+        elif ver.major == 10:
+            name = "Windows 10"
+        else:
+            name = f"Windows {ver.major}.{ver.minor}"
+        return f"{name} Build {build}"
+    except Exception:
+        return "Windows (unknown version)"
+
+
+def _setup_logging(debug: bool = False):
+    """
+    Configure the root logger with:
+      - A concise console handler (HH:MM:SS [LEVEL] message)
+      - A detailed rotating file handler (date+time+level+module, 3×5MB)
+      - A session separator banner written to the log file on startup
+    """
+    log_level = logging.DEBUG if debug else logging.INFO
+
+    # Concise format for the console window
+    console_formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S"
+    )
+    # Verbose format for the log file — includes date and source module
+    file_formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)-8s] %(module)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Remove any existing handlers from a previous run
+    if root_logger.hasHandlers():
+        root_logger.handlers.clear()
+
+    # --- Console handler ---
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+
+    # --- Rotating file handler (max 5 MB × 3 backups = 15 MB total) ---
+    APP_DATA_DIR.mkdir(exist_ok=True)
+    log_file_path = APP_DATA_DIR / "ow_notifier.log"
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    file_handler.setFormatter(file_formatter)
+    root_logger.addHandler(file_handler)
+
+    # --- Session separator banner (file only, so console stays clean) ---
+    import datetime
+    win_ver = _get_windows_version()
+    wgc_status = "available" if HAS_WGC else "NOT AVAILABLE (will fall back to mss)"
+    mss_status = "available" if HAS_MSS else "NOT AVAILABLE"
+    separator = (
+        f"\n{'=' * 72}\n"
+        f"  SESSION STARTED  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"  App:             {APP_NAME} v{VERSION}\n"
+        f"  OS:              {win_ver}\n"
+        f"  WGC backend:     {wgc_status}\n"
+        f"  MSS backend:     {mss_status}\n"
+        f"  Debug mode:      {'ON' if debug else 'off'}\n"
+        f"{'=' * 72}"
+    )
+    file_handler.stream.write(separator + "\n")
+    file_handler.stream.flush()
+
+
 def main():
     debug = "--debug" in sys.argv
     console = "--console" in sys.argv
 
     # Setup logging
-    log_level = logging.DEBUG if debug else logging.INFO
-    log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-    
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
-    
-    # Remove any existing handlers
-    if root_logger.hasHandlers():
-        root_logger.handlers.clear()
-        
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(log_formatter)
-    root_logger.addHandler(console_handler)
-    
-    # Rotating file handler (max 5MB, keep 1 backup)
-    APP_DATA_DIR.mkdir(exist_ok=True)
-    log_file_path = APP_DATA_DIR / "ow_notifier.log"
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file_path, maxBytes=5 * 1024 * 1024, backupCount=1
-    )
-    file_handler.setFormatter(log_formatter)
-    root_logger.addHandler(file_handler)
-
+    _setup_logging(debug)
     logging.info(f"{APP_NAME} v{VERSION} starting...")
 
     # Create detector
